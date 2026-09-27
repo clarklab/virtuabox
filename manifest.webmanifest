@@ -1,0 +1,23 @@
+{
+  "name": "VIRTUABOX — 2-minute neon boxing",
+  "short_name": "VIRTUABOX",
+  "description": "Call four punches, out-guess your opponent, and knock out three neon fighters in two minutes.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#05010c",
+  "theme_color": "#05010c",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "og.jpg", "sizes": "1200x630", "type": "image/jpeg", "form_factor": "wide", "label": "VIRTUABOX" }
+  ]
+}

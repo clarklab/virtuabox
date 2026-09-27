@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c0540"/>
+      <stop offset="1" stop-color="#05010c"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <path d="M6 50h52M10 56h44" stroke="#ff2bd6" stroke-width="1.4" opacity=".7"/>
+  <g fill="none" stroke="#3dff72" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <!-- glove -->
+    <path stroke-width="3.2" d="M22 30c-1-10 6-18 15-18 9 0 15 6 15 15 0 9-5 15-12 16H28c-3 0-5-2-5-5"/>
+    <path stroke-width="3.2" d="M23 38c-5 0-9-3-9-7s3-6 7-6c3 0 5 2 6 5"/>
+    <rect x="25" y="43" width="17" height="7" rx="2" stroke-width="3"/>
+    <!-- wireframe contours -->
+    <path stroke-width="1.6" opacity=".85" d="M25 21c7-4 18-4 26 1M24 31c8-3 19-3 28 0M37 12c-4 8-4 22 1 31"/>
+  </g>
+</svg>
