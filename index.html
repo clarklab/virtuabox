@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>VIRTUABOX — 2-minute 16-bit boxing</title>
+  <meta name="description" content="Call four punches, out-guess your opponent, and knock out three fighters in two minutes. A 16-bit style 3D boxing game for your phone.">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VIRTUABOX">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="VIRTUABOX">
+  <meta property="og:title" content="VIRTUABOX — 2-minute 16-bit boxing">
+  <meta property="og:description" content="Call four punches. Out-guess the opponent. Knock out three fighters in two minutes.">
+  <meta property="og:image" content="og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A green wireframe boxer squares off against a pixel-art champion in a 16-bit boxing ring">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="VIRTUABOX — 2-minute 16-bit boxing">
+  <meta name="twitter:description" content="Call four punches. Out-guess the opponent. Knock out three fighters in two minutes.">
+  <meta name="twitter:image" content="og.jpg">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="arrow" viewBox="0 0 10 10"><g fill="currentColor" shape-rendering="crispEdges"><rect x="3" y="0" width="7" height="1"/><rect x="3" y="1" width="7" height="1"/><rect x="7" y="2" width="3" height="1"/><rect x="6" y="3" width="4" height="1"/><rect x="5" y="4" width="2" height="1"/><rect x="8" y="4" width="2" height="1"/><rect x="4" y="5" width="2" height="1"/><rect x="8" y="5" width="2" height="1"/><rect x="3" y="6" width="2" height="1"/><rect x="8" y="6" width="2" height="1"/><rect x="2" y="7" width="2" height="1"/><rect x="1" y="8" width="2" height="1"/><rect x="0" y="9" width="2" height="1"/></g></symbol>
+      <symbol id="cycle" viewBox="0 0 12 12"><g fill="currentColor" shape-rendering="crispEdges"><rect x="4" y="0" width="5" height="1"/><rect x="2" y="1" width="8" height="1"/><rect x="1" y="2" width="3" height="1"/><rect x="7" y="2" width="2" height="1"/><rect x="1" y="3" width="2" height="1"/><rect x="0" y="4" width="2" height="1"/><rect x="10" y="4" width="2" height="1"/><rect x="0" y="5" width="2" height="1"/><rect x="10" y="5" width="2" height="1"/><rect x="0" y="6" width="2" height="1"/><rect x="10" y="6" width="2" height="1"/><rect x="0" y="7" width="2" height="1"/><rect x="10" y="7" width="2" height="1"/><rect x="1" y="8" width="2" height="1"/><rect x="9" y="8" width="2" height="1"/><rect x="1" y="9" width="3" height="1"/><rect x="8" y="9" width="3" height="1"/><rect x="2" y="10" width="8" height="1"/><rect x="4" y="11" width="4" height="1"/></g></symbol>
+    </defs>
+  </svg>
+
+  <div id="app" class="is-title">
+    <!-- TOP SCREEN: the ring -->
+    <section id="arena" aria-label="Ring">
+      <div id="hud">
+        <div class="fighter p1">
+          <div class="nm">YOU</div>
+          <div class="bar"><i class="lag"></i><i class="fill"></i></div>
+        </div>
+        <div class="mid">
+          <div id="clock" aria-label="Time left"></div>
+          <div id="score">000000</div>
+        </div>
+        <div class="fighter p2">
+          <div class="nm" id="opp-name">PIXEL PETE</div>
+          <div class="bar"><i class="lag"></i><i class="fill"></i></div>
+        </div>
+      </div>
+      <div id="combo" aria-live="polite"></div>
+      <div id="fx" aria-live="polite"></div>
+    </section>
+
+    <!-- bezel between the two "monitors" -->
+    <div id="bezel"><span id="fightno">FIGHT <b>1</b>/3</span><em id="status">SCOUTING</em><span>W.V.B.A.</span></div>
+
+    <!-- BOTTOM SCREEN: the call sheet -->
+    <section id="deck" aria-label="Controls">
+      <div class="queues">
+        <div class="row them">
+          <label id="them-label">PETE</label>
+          <div class="slots" id="them-slots"></div>
+        </div>
+        <div class="row you">
+          <label>YOU</label>
+          <div class="slots" id="you-slots"></div>
+        </div>
+      </div>
+      <div id="shot"><i></i></div>
+      <div id="pad">
+        <button class="pb ul" data-m="0" aria-label="Jab, upper left. Beats hook.">
+          <svg class="arr m0"><use href="#arrow"/></svg><b>JAB</b><small>beats HOOK</small>
+        </button>
+        <button class="pb ur" data-m="1" aria-label="Hook, upper right. Beats uppercut.">
+          <svg class="arr m1"><use href="#arrow"/></svg><b>HOOK</b><small>beats UPPER</small>
+        </button>
+        <button class="pb ll" data-m="3" aria-label="Body shot, lower left. Beats jab.">
+          <svg class="arr m3"><use href="#arrow"/></svg><b>BODY</b><small>beats JAB</small>
+        </button>
+        <button class="pb lr" data-m="2" aria-label="Uppercut, lower right. Beats body shot.">
+          <svg class="arr m2"><use href="#arrow"/></svg><b>UPPER</b><small>beats BODY</small>
+        </button>
+        <div class="hub" aria-hidden="true"><svg><use href="#cycle"/></svg></div>
+      </div>
+      <p class="legend"><span><svg><use href="#cycle"/></svg> BEATS NEXT CLOCKWISE</span> <span>DIAGONAL=<b class="y">TRADE</b> SAME=<b class="c">CLASH</b></span></p>
+    </section>
+
+    <!-- title -->
+    <div id="title" class="overlay show">
+      <div class="logo">
+        <h1><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
+        <p class="tag">4 PUNCHES · 2 MINUTES · 3 KOs</p>
+      </div>
+      <div class="howto">
+        <div class="mini">
+          <span class="q ul"><svg class="arr m0"><use href="#arrow"/></svg>JAB</span>
+          <span class="q ur"><svg class="arr m1"><use href="#arrow"/></svg>HOOK</span>
+          <span class="q ll"><svg class="arr m3"><use href="#arrow"/></svg>BODY</span>
+          <span class="q lr"><svg class="arr m2"><use href="#arrow"/></svg>UPPER</span>
+          <span class="hub"><svg><use href="#cycle"/></svg></span>
+        </div>
+        <ol>
+          <li>Call <b>4 punches</b> before the shot clock runs out.</li>
+          <li>Each punch <b>beats the next one clockwise</b>. Diagonals <b class="y">trade</b>. Same punch <b class="c">clashes</b>.</li>
+          <li>Read the <b class="p">intel</b>, chain wins for <b>combos</b>, and KO all three in <b>2:00</b>.</li>
+        </ol>
+        <button id="start" class="cta"><span class="blink">PRESS START</span></button>
+        <div class="row-mini">
+          <span id="best"></span>
+          <span class="copy">© 2026 W.V.B.A.</span>
+          <button id="mute" class="ghost" aria-pressed="false">SOUND: ON</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- versus card -->
+    <div id="vs" class="overlay">
+      <div class="card">
+        <div class="fightbadge">FIGHT <b id="vs-n">#1</b></div>
+        <div class="versus">
+          <div class="side you"><small>CHALLENGER</small><strong>YOU</strong></div>
+          <div class="vs-word">VS.</div>
+          <div class="side opp"><small id="vs-title">THE ROOKIE</small><strong id="vs-name">PIXEL PETE</strong></div>
+        </div>
+        <p id="vs-bio">Loves the JAB.</p>
+        <p class="intel">INTEL: <b id="vs-intel">2</b> of their punches revealed each round · shot clock <b id="vs-clock">8s</b></p>
+      </div>
+    </div>
+
+    <!-- results -->
+    <div id="results" class="overlay">
+      <div class="res">
+        <div id="res-head">CHAMPION!</div>
+        <div class="res-label">SCORE</div>
+        <div id="res-score">0</div>
+        <div id="res-rank"></div>
+        <div class="res-stats" id="res-stats"></div>
+        <div class="res-grid" id="res-grid"></div>
+        <div class="res-actions">
+          <button id="share" class="cta">SHARE SCORE</button>
+          <button id="again" class="cta alt">REMATCH</button>
+        </div>
+        <div id="res-best"></div>
+      </div>
+    </div>
+
+    <!-- share fallback -->
+    <div id="sharebox" class="overlay">
+      <div class="sharecard">
+        <img id="share-img" alt="Your VIRTUABOX score card">
+        <p class="hint">Long-press or save the image, then post it anywhere.</p>
+        <div class="res-actions">
+          <a id="share-dl" class="cta" download="virtuabox-score.png">SAVE IMAGE</a>
+          <button id="share-copy" class="cta alt">COPY TEXT</button>
+        </div>
+        <button id="share-close" class="ghost">CLOSE</button>
+      </div>
+    </div>
+
+    <div id="ogcard" class="overlay" aria-hidden="true">
+      <div class="logo">
+        <h1><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
+        <p class="tag">4 PUNCHES · 2 MINUTES · 3 KOs</p>
+        <p class="og-sub">OUT-GUESS. OUT-PUNCH.</p>
+      </div>
+    </div>
+
+    <div id="paused" class="overlay"><div class="pz">PAUSED<small>tap to resume</small></div></div>
+    <div id="nogl" class="overlay"><div class="pz">WEBGL NEEDED<small>This browser can't run the 3D ring.</small></div></div>
+  </div>
+  <noscript><p style="color:#fff;padding:2rem;font-family:sans-serif">VIRTUABOX needs JavaScript.</p></noscript>
+</body>
+</html>
