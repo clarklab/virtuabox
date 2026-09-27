@@ -1,7 +1,7 @@
 {
   "name": "VIRTUABOX — 2-minute 16-bit boxing",
   "short_name": "VIRTUABOX",
-  "description": "Call four punches, out-guess your opponent, and knock out three neon fighters in two minutes.",
+  "description": "Call four punches, out-guess your opponent, and knock out three fighters in two minutes. A 16-bit style boxing game.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
