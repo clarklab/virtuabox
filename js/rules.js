@@ -52,20 +52,23 @@ export const OPPONENTS = [
   {
     name: 'PIXEL PETE', short: 'PETE', title: 'THE ROOKIE',
     bio: 'Loves the JAB. Telegraphs everything.',
-    color: '#ff2bd6', hp: 70, power: 0.8, intel: 2, shotClock: 8,
+    color: '#f048b0', hp: 70, power: 0.8, intel: 2, shotClock: 8,
     style: 'pattern', hair: 'mohawk', bulk: 0.94, tall: 0.97,
+    look: { skin: '#f8b890', trunks: '#f048b0', gloves: '#e82818', hair: '#9030e0', boots: '#f0f0f0' },
   },
   {
     name: 'NOVA KID', short: 'NOVA', title: 'THE COPYCAT',
     bio: 'Steals your last combo. Think one step ahead.',
-    color: '#22e5ff', hp: 90, power: 1.0, intel: 1, shotClock: 7,
+    color: '#30b8f8', hp: 90, power: 1.0, intel: 1, shotClock: 7,
     style: 'copycat', hair: 'flattop', bulk: 1.0, tall: 1.02,
+    look: { skin: '#a86038', trunks: '#30b8f8', gloves: '#2858e8', hair: '#181818', boots: '#202020' },
   },
   {
     name: 'MEGAVOLT', short: 'VOLT', title: 'THE CHAMP',
     bio: 'Reads your habits and counters them. Mix it up.',
-    color: '#ffb000', hp: 110, power: 1.25, intel: 1, shotClock: 6,
+    color: '#f8a800', hp: 110, power: 1.25, intel: 1, shotClock: 6,
     style: 'counter', hair: 'spikes', bulk: 1.18, tall: 1.07, belt: true,
+    look: { skin: '#e09868', trunks: '#f8a800', gloves: '#e82818', hair: '#f8e030', boots: '#f0f0f0' },
   },
 ];
 

@@ -22,18 +22,18 @@ const API = 'https://api.elevenlabs.io';
 const ANNOUNCER = 'pNInz6obpgDQGcFmaJgB'; // "Adam" premade voice
 
 const SFX = {
-  'hit-1': [0.5, 'Punchy boxing glove punch to the face, tight meaty thwack with a crisp leather slap, arcade fighting game impact, dry, no reverb'],
-  'hit-2': [0.5, 'Heavy boxing glove body blow to the ribs, deep punchy thud, fighting game impact sound effect, dry'],
-  'hit-3': [1.2, 'Brutal knockout uppercut impact, massive bass boom with a sharp crack, cinematic fighting game super hit'],
-  whoosh: [0.5, 'Very fast punch swing whoosh, short sharp air swipe, fighting game'],
-  clash: [0.8, 'Two boxing gloves slamming together with an electric neon zap and a metallic clang, sci-fi arcade impact'],
+  'hit-1': [0.5, '16-bit SNES boxing game punch hit to the face, crunchy retro sampled thwack, Super Nintendo sound chip, short and punchy'],
+  'hit-2': [0.5, '16-bit SNES boxing game body blow, deep retro sampled thud, Super Nintendo sound chip, short'],
+  'hit-3': [1.2, '16-bit SNES boxing game knockout super punch, huge crunchy retro impact with a descending bit-crushed boom'],
+  whoosh: [0.5, '16-bit retro video game punch swing swoosh, short bit-crushed air swipe, Super Nintendo'],
+  clash: [0.8, '16-bit retro video game block sound, two boxing gloves clanging together, metallic bit-crushed clang, SNES'],
   bell: [1.5, 'Single boxing ring bell ding, bright brass bell, clean'],
   'bell-3': [2.2, 'Boxing ring bell rung three times fast, ding ding ding, arena'],
   cheer: [3, 'Big arena crowd erupting in cheers and screams after a huge knockout punch'],
   crowd: [8, 'Indoor boxing arena crowd ambience, steady excited murmur and distant chatter, no applause spikes, loopable'],
   fall: [1.5, 'Heavy body falling flat onto a boxing ring canvas, big thud with ring ropes rattling'],
-  slam: [1.2, 'Heavy landing slam with electric crackle and a bass drop, video game fighter entrance'],
-  riser: [1, 'Short synth whoosh riser building into an impact, arcade game transition'],
+  slam: [1.2, '16-bit retro video game heavy landing thud with a short chiptune stinger, Super Nintendo'],
+  riser: [1, '16-bit chiptune rising arpeggio sweep, retro video game transition, Super Nintendo'],
 };
 
 const VO = {
@@ -53,7 +53,7 @@ const VO = {
 const MUSIC = {
   'music-fight': [
     125000,
-    'Relentless high-energy synthwave and drum and bass hybrid for a neon arcade boxing video game. 150 BPM, punchy four-on-the-floor kick, pulsing sawtooth bass, fast retro 80s arpeggios, huge gated snares, adrenaline, no intro fade, instrumental, no vocals.',
+    'Energetic 16-bit Super Nintendo boxing video game fight theme, authentic SNES sound chip: sampled brass stabs, slap bass, orchestra hits, punchy sampled drums and square-wave lead melody. 150 BPM, heroic and relentless, arcade sports game energy, loops cleanly, no intro fade, instrumental, no vocals.',
   ],
 };
 

@@ -13,19 +13,19 @@ const _d = new Vector3();
 const _e = new Vector3();
 const _w = new Vector3();
 const _pole = new Vector3();
-const FLASH_WHITE = new Color(3, 3, 3);
+const FLASH_WHITE = new Color(1, 1, 1);
 
 // ---------------------------------------------------------------------------
-// Fat neon line materials. LineMaterial widths are in drawing-buffer pixels,
-// so the stage rescales every registered material on resize.
+// Pixel-crisp line + outline materials. Widths are in drawing-buffer pixels
+// (one "game pixel" after upscaling), so the stage updates them on resize.
 export const LINE_MATERIALS = new Set();
 const lineRes = { w: 1, h: 1, dpr: 1 };
+const OUTLINE_RES = new THREE.Vector2(1, 1);
 
-export function neonLine(color, cssWidth, extra = {}) {
+export function pixelLine(color, cssWidth, extra = {}) {
   const mat = new THREE.LineMaterial({ color: new Color(color), linewidth: cssWidth, ...extra });
   // An edge pointing straight down the view axis has a zero-length screen
-  // direction; normalize() then yields NaN vertices, and some GPUs rasterize
-  // those with NaN varyings that bloom smears across the whole frame.
+  // direction; normalize() would yield NaN vertices.
   mat.vertexShader = mat.vertexShader.replace(
     'dir = normalize( dir );',
     'dir = dot( dir, dir ) > 1e-14 ? normalize( dir ) : vec2( 1.0, 0.0 );',
@@ -39,6 +39,7 @@ export function neonLine(color, cssWidth, extra = {}) {
 
 export function setLineResolution(w, h, dpr) {
   Object.assign(lineRes, { w, h, dpr });
+  OUTLINE_RES.set(w, h);
   for (const m of LINE_MATERIALS) {
     m.resolution.set(w, h);
     m.linewidth = m.userData.cssWidth * dpr;
@@ -53,7 +54,38 @@ export function edgeLines(geo, threshold = 1) {
   return lines;
 }
 
-const hdr = (hex, k) => new Color(hex).multiplyScalar(k);
+/**
+ * Inverted-hull outline with a constant on-screen thickness in pixels: back
+ * faces pushed out along their screen-space normal. Sprite-style ink lines.
+ */
+export function outlineMaterial(color, px, extra = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new Color(color) }, uPx: { value: px }, uRes: { value: OUTLINE_RES } },
+    vertexShader: /* glsl */ `
+      uniform float uPx; uniform vec2 uRes;
+      void main() {
+        vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec2 dir = (projectionMatrix * vec4(normalize(normalMatrix * normal), 0.0)).xy;
+        float l = length(dir);
+        if (l > 1e-5) clip.xy += dir / l * (uPx * 2.0 / uRes) * clip.w;
+        gl_Position = clip;
+      }`,
+    fragmentShader: /* glsl */ `uniform vec3 uColor; void main() { gl_FragColor = vec4(uColor, 1.0); }`,
+    side: THREE.BackSide,
+    ...extra,
+  });
+}
+
+// 3-step cel ramp shared by every toon material
+let toonRamp = null;
+function ramp() {
+  if (!toonRamp) {
+    toonRamp = new THREE.DataTexture(new Uint8Array([95, 175, 255]), 3, 1, THREE.RedFormat);
+    toonRamp.minFilter = toonRamp.magFilter = THREE.NearestFilter;
+    toonRamp.needsUpdate = true;
+  }
+  return toonRamp;
+}
 
 // ---------------------------------------------------------------------------
 const easeOut = (t) => 1 - (1 - t) * (1 - t);
@@ -84,50 +116,59 @@ const PUNCH_STYLE = {
 };
 
 // ---------------------------------------------------------------------------
+const PLAYER_GREEN = '#58f858';
+const PLAYER_INNER = '#10702a';
+
 export class Boxer {
   /**
    * @param {object} o
-   * @param {string} o.color  neon hex color
-   * @param {boolean} o.ghost  translucent hidden-line wireframe (the player)
+   * @param {string} o.color  accent color (UI)
+   * @param {boolean} o.ghost  the player: see-through green outline + wireframe
+   * @param {object} o.look   toon colors { skin, trunks, gloves, hair, boots }
    */
   constructor(o) {
     this.o = o;
-    this.isPlayer = !!o.ghost;
+    const ghost = (this.isPlayer = !!o.ghost);
     this.color = new Color(o.color);
     const bulk = o.bulk ?? 1;
     const tall = o.tall ?? 1;
     this.bulk = bulk;
-
     this.materials = [];
     this.geometries = [];
-    this.lineCol = hdr(o.color, o.ghost ? 0.85 : 1.25);
-    this.lineMat = this.#track(neonLine(this.lineCol.clone(), o.ghost ? 1.8 : 2.6, { fog: false }));
-    this.gloveLineMat = this.#track(neonLine(hdr(o.color, o.ghost ? 1.3 : 1.9), o.ghost ? 2.2 : 2.8, { fog: false }));
+    this.flash = 0;
 
-    if (o.ghost) {
+    if (ghost) {
       // Depth-only prepass hides the far side of the wireframe while the
-      // opponent stays visible through the body, Punch-Out style.
+      // opponent stays visible through the body, Super Punch-Out style.
       this.fillMat = this.#track(new THREE.MeshBasicMaterial({
         colorWrite: false, transparent: true, depthWrite: true,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2,
       }));
-      this.gloveFillMat = this.fillMat;
-      this.lineMat.transparent = true;
-      this.gloveLineMat.transparent = true;
+      this.hullMat = this.#track(outlineMaterial(PLAYER_GREEN, 2, { transparent: true, depthWrite: false }));
+      this.lineCol = new Color(PLAYER_INNER);
+      this.lineMat = this.#track(pixelLine(this.lineCol.clone(), 1, { fog: false, transparent: true }));
+      this.gloveLineMat = this.#track(pixelLine('#30c040', 1, { fog: false, transparent: true }));
     } else {
-      this.fillMat = this.#track(new THREE.MeshBasicMaterial({
-        color: new Color(o.color).multiplyScalar(0.05).add(new Color(0x020008)),
-        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2,
-      }));
-      this.gloveFillMat = this.#track(new THREE.MeshBasicMaterial({
-        color: new Color(o.color).multiplyScalar(0.28),
-        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2,
-      }));
+      const look = o.look || {};
+      const toon = (hex) => this.#track(new THREE.MeshToonMaterial({ color: new Color(hex), gradientMap: ramp() }));
+      this.toon = {
+        skin: toon(look.skin || '#f0b080'),
+        trunks: toon(look.trunks || o.color),
+        band: toon('#f8f8f8'),
+        gloves: toon(look.gloves || '#e02020'),
+        boots: toon(look.boots || '#f0f0f0'),
+        hair: toon(look.hair || '#202020'),
+        gold: toon('#f8d030'),
+        dark: toon('#181818'),
+      };
+      this.hullMat = this.#track(outlineMaterial('#000000', 1.1));
     }
-    this.eyeMat = this.#track(new THREE.MeshBasicMaterial({ color: new Color(1, 1, 1).multiplyScalar(4), fog: false }));
-    this.flash = 0;
-    this.fillOrder = o.ghost ? 100 : 0;
-    this.lineOrder = o.ghost ? 101 : 0;
+    this.eyeMat = this.#track(new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }));
+    this.inkMat = this.#track(new THREE.MeshBasicMaterial({ color: 0x080808, fog: false }));
+
+    // wireframe reads best low-poly; toon shading wants rounder shapes
+    const cyl = (rt, rb, h, seg, hs = 1, t0 = 0) => new THREE.CylinderGeometry(rt, rb, h, ghost ? seg : seg + 6, hs, ghost, t0);
+    const sph = (r, ws, hs) => new THREE.SphereGeometry(r, ghost ? ws : ws + 6, ghost ? hs : hs + 4);
 
     // ---- hierarchy -------------------------------------------------------
     this.root = new Group();
@@ -155,82 +196,67 @@ export class Boxer {
       gloveOffset: 0.085,
     });
 
-    // torso: lathe, octagonal cross-section, flattened front-to-back
+    // torso: lathe, flattened front-to-back
     const prof = [
       [0.145, -0.02], [0.155, 0.1], [0.185, 0.24], [0.225, 0.36], [0.235, 0.44], [0.19, 0.52], [0.08, 0.565],
     ].map(([r, y]) => new THREE.Vector2(r, y * tall));
-    const torsoGeo = new THREE.LatheGeometry(prof, 8, Math.PI / 8);
+    const torsoGeo = new THREE.LatheGeometry(prof, ghost ? 8 : 16, Math.PI / 8);
     torsoGeo.scale(bulk, 1, 0.7 * bulk);
-    this.#part(torsoGeo, this.torso, this.lineMat, this.fillMat);
+    this.#part(torsoGeo, this.torso, 'skin');
 
-    // pecs/abs detail line on the opponent chest
-    const neckGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.12, 6, 1, true);
+    const neckGeo = cyl(0.055, 0.065, 0.12, 6);
     neckGeo.translate(0, 0.58 * tall, 0);
-    this.#part(neckGeo, this.torso, this.lineMat, this.fillMat);
+    this.#part(neckGeo, this.torso, 'skin');
 
     // head
     this.head.position.y = D.headY;
-    const headGeo = new THREE.SphereGeometry(0.115, 8, 6);
+    const headGeo = sph(0.115, 8, 6);
     headGeo.scale(0.92, 1.12, 1.0);
-    this.#part(headGeo, this.head, this.lineMat, this.fillMat);
+    this.#part(headGeo, this.head, 'skin');
     const jawGeo = new THREE.BoxGeometry(0.13, 0.05, 0.1);
     jawGeo.translate(0, -0.085, 0.03);
-    this.#part(jawGeo, this.head, this.lineMat, this.fillMat);
+    this.#part(jawGeo, this.head, 'skin');
     this.#hair(o.hair);
-    if (!o.ghost) {
-      const eyeGeo = this.#geo(new THREE.BoxGeometry(0.032, 0.012, 0.01));
-      for (const s of [-1, 1]) {
-        const eye = new Mesh(eyeGeo, this.eyeMat);
-        eye.position.set(s * 0.038, 0.018, 0.098);
-        eye.rotation.z = s * 0.18;
-        this.head.add(eye);
-      }
-    } else {
-      // headband knot for the player
-      const bandGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.03, 8, 1, true);
+    if (!ghost) this.#face();
+    else {
+      const bandGeo = cyl(0.1, 0.1, 0.03, 8);
       bandGeo.translate(0, 0.045, 0);
-      this.#part(bandGeo, this.head, this.gloveLineMat, this.fillMat);
+      this.#part(bandGeo, this.head, 'gloves');
     }
 
-    // shorts + belt
-    const shortsGeo = new THREE.CylinderGeometry(0.19 * bulk, 0.205 * bulk, 0.27, 8, 2, true, Math.PI / 8);
+    // trunks + waistband (+ title belt)
+    const shortsGeo = cyl(0.19 * bulk, 0.205 * bulk, 0.27, 8, 2, Math.PI / 8);
     shortsGeo.scale(1, 1, 0.8);
     shortsGeo.translate(0, -0.1, 0);
-    this.#part(shortsGeo, this.hips, this.gloveLineMat, this.fillMat);
-    const bandGeo = new THREE.CylinderGeometry(0.175 * bulk, 0.19 * bulk, 0.06, 8, 1, true, Math.PI / 8);
+    this.#part(shortsGeo, this.hips, 'trunks');
+    const bandGeo = cyl(0.182 * bulk, 0.195 * bulk, 0.06, 8, 1, Math.PI / 8);
     bandGeo.scale(1, 1, 0.8);
     bandGeo.translate(0, 0.02, 0);
-    this.#part(bandGeo, this.hips, this.lineMat, this.fillMat);
+    this.#part(bandGeo, this.hips, o.belt ? 'gold' : 'band');
     if (o.belt) {
-      const beltGeo = new THREE.CylinderGeometry(0.2 * bulk, 0.2 * bulk, 0.09, 8, 1, true, Math.PI / 8);
-      beltGeo.scale(1, 1, 0.82);
-      beltGeo.translate(0, 0.02, 0);
-      const goldLine = this.#track(neonLine(hdr('#ffe24a', 2.2), 2.4, { fog: false }));
-      this.#part(beltGeo, this.hips, goldLine, this.fillMat);
-      const plateGeo = new THREE.BoxGeometry(0.16, 0.11, 0.02);
-      plateGeo.translate(0, 0.02, 0.17 * bulk);
-      this.#part(plateGeo, this.hips, goldLine, this.gloveFillMat);
+      const plateGeo = new THREE.BoxGeometry(0.16, 0.11, 0.03);
+      plateGeo.translate(0, 0.02, 0.16 * bulk);
+      this.#part(plateGeo, this.hips, 'gold');
     }
 
     // arms
     this.arms = [1, -1].map((side) => {
-      const upperGeo = new THREE.CylinderGeometry(0.066 * bulk, 0.056 * bulk, D.upper, 6, 1, true);
+      const upperGeo = cyl(0.066 * bulk, 0.056 * bulk, D.upper, 6);
       upperGeo.translate(0, D.upper / 2, 0);
-      const foreGeo = new THREE.CylinderGeometry(0.056 * bulk, 0.046 * bulk, D.fore, 6, 1, true);
+      const foreGeo = cyl(0.056 * bulk, 0.046 * bulk, D.fore, 6);
       foreGeo.translate(0, D.fore / 2, 0);
-      const gloveGeo = new THREE.SphereGeometry(D.gloveR, 8, 6);
+      const gloveGeo = sph(D.gloveR, 8, 6);
       gloveGeo.scale(1, 1.22, 1.05);
       gloveGeo.translate(0, D.gloveOffset, 0);
-      const cuffGeo = new THREE.CylinderGeometry(0.066, 0.058, 0.08, 8, 1, true);
-      cuffGeo.translate(0, 0.0, 0);
+      const cuffGeo = cyl(0.066, 0.058, 0.08, 8);
       const upper = new Group();
       const fore = new Group();
       const glove = new Group();
       this.torso.add(upper, fore, glove);
-      this.#part(upperGeo, upper, this.lineMat, this.fillMat);
-      this.#part(foreGeo, fore, this.lineMat, this.fillMat);
-      this.#part(gloveGeo, glove, this.gloveLineMat, this.gloveFillMat);
-      this.#part(cuffGeo, glove, this.gloveLineMat, this.gloveFillMat);
+      this.#part(upperGeo, upper, 'skin');
+      this.#part(foreGeo, fore, 'skin');
+      this.#part(gloveGeo, glove, 'gloves');
+      this.#part(cuffGeo, glove, ghost ? 'gloves' : 'band');
       return {
         side, upper, fore, glove,
         shoulder: new Vector3(side * D.shoulderX, D.shoulderY, 0),
@@ -240,19 +266,19 @@ export class Boxer {
 
     // legs
     this.legs = [1, -1].map((side) => {
-      const thighGeo = new THREE.CylinderGeometry(0.08 * bulk, 0.06 * bulk, D.thigh, 6, 1, true);
+      const thighGeo = cyl(0.08 * bulk, 0.06 * bulk, D.thigh, 6);
       thighGeo.translate(0, D.thigh / 2, 0);
-      const shinGeo = new THREE.CylinderGeometry(0.058 * bulk, 0.045 * bulk, D.shin, 6, 1, true);
+      const shinGeo = cyl(0.058 * bulk, 0.045 * bulk, D.shin, 6);
       shinGeo.translate(0, D.shin / 2, 0);
-      const bootGeo = new THREE.BoxGeometry(0.1, 0.1, 0.22, 1, 1, 2);
-      bootGeo.translate(0, -0.02, 0.05);
+      const bootGeo = new THREE.BoxGeometry(0.1, 0.12, 0.22, 1, 1, 2);
+      bootGeo.translate(0, -0.01, 0.05);
       const thigh = new Group();
       const shin = new Group();
       const boot = new Group();
       this.rig.add(thigh, shin, boot);
-      this.#part(thighGeo, thigh, this.lineMat, this.fillMat);
-      this.#part(shinGeo, shin, this.lineMat, this.fillMat);
-      this.#part(bootGeo, boot, this.gloveLineMat, this.fillMat);
+      this.#part(thighGeo, thigh, 'skin');
+      this.#part(shinGeo, shin, 'skin');
+      this.#part(bootGeo, boot, 'boots');
       return {
         side, thigh, shin, boot,
         hip: new Vector3(side * 0.095 * bulk, -0.06, 0),
@@ -269,7 +295,6 @@ export class Boxer {
     this.clips = [];
     this.bps = 2.5; // idle bounce synced to the 150bpm soundtrack
     this.phase = Math.random() * 10;
-    this.gloveHistory = [[], []];
     this.update(0, 0);
   }
 
@@ -283,34 +308,54 @@ export class Boxer {
     return g;
   }
 
-  #part(geo, parent, lineMat, fillMat) {
+  /** One body part: toon fill + ink outline, or ghost prepass + green outline + wireframe. */
+  #part(geo, parent, kind) {
     this.#geo(geo);
-    const mesh = new Mesh(geo, fillMat);
-    mesh.renderOrder = this.fillOrder;
-    const lines = new THREE.LineSegments2(this.#geo(edgeLines(geo)), lineMat);
-    lines.renderOrder = this.lineOrder;
-    parent.add(mesh, lines);
-    return mesh;
+    const hull = new Mesh(geo, this.hullMat);
+    if (this.isPlayer) {
+      const fill = new Mesh(geo, this.fillMat);
+      fill.renderOrder = 100;
+      hull.renderOrder = 101;
+      const lines = new THREE.LineSegments2(this.#geo(edgeLines(geo)), kind === 'gloves' ? this.gloveLineMat : this.lineMat);
+      lines.renderOrder = 102;
+      parent.add(fill, hull, lines);
+    } else {
+      parent.add(new Mesh(geo, this.toon[kind] || this.toon.skin), hull);
+    }
+  }
+
+  #face() {
+    const add = (geo, mat, x, y, z, rz = 0) => {
+      const m = new Mesh(this.#geo(geo), mat);
+      m.position.set(x, y, z);
+      m.rotation.z = rz;
+      this.head.add(m);
+    };
+    for (const s of [-1, 1]) {
+      add(new THREE.BoxGeometry(0.036, 0.024, 0.012), this.eyeMat, s * 0.04, 0.02, 0.1);
+      add(new THREE.BoxGeometry(0.014, 0.02, 0.012), this.inkMat, s * 0.036, 0.018, 0.106);
+      add(new THREE.BoxGeometry(0.05, 0.014, 0.014), this.inkMat, s * 0.042, 0.048, 0.1, s * 0.3); // scowl
+    }
+    add(new THREE.BoxGeometry(0.05, 0.01, 0.012), this.inkMat, 0, -0.06, 0.09);
   }
 
   #hair(kind) {
-    const lm = this.gloveLineMat;
     if (kind === 'mohawk') {
-      const g = new THREE.BoxGeometry(0.035, 0.09, 0.24, 1, 1, 4);
+      const g = new THREE.BoxGeometry(0.04, 0.09, 0.24, 1, 1, 4);
       g.translate(0, 0.13, -0.01);
-      this.#part(g, this.head, lm, this.gloveFillMat);
+      this.#part(g, this.head, 'hair');
     } else if (kind === 'flattop') {
-      const g = new THREE.BoxGeometry(0.2, 0.08, 0.2, 2, 1, 2);
+      const g = new THREE.BoxGeometry(0.21, 0.08, 0.21, 2, 1, 2);
       g.translate(0, 0.125, -0.005);
-      this.#part(g, this.head, lm, this.gloveFillMat);
+      this.#part(g, this.head, 'hair');
     } else if (kind === 'spikes') {
       for (let i = 0; i < 7; i++) {
         const a = (i / 7) * Math.PI * 2;
-        const g = new THREE.ConeGeometry(0.035, 0.14, 4, 1, true);
+        const g = new THREE.ConeGeometry(0.04, 0.15, this.isPlayer ? 4 : 6, 1, this.isPlayer);
         g.rotateX(-0.5);
         g.rotateY(a);
         g.translate(Math.sin(a) * 0.05, 0.14, Math.cos(a) * 0.05);
-        this.#part(g, this.head, lm, this.gloveFillMat);
+        this.#part(g, this.head, 'hair');
       }
     }
   }
@@ -589,14 +634,13 @@ export class Boxer {
     this.#solveArm(aR, _a.copy(p.gR).applyMatrix4(_mi), p.flare[1]);
     for (const leg of this.legs) this.#solveLeg(leg);
 
-    // hit flash
-    if (this.flash > 0) {
+    // hit flash: classic sprite white-out, stepped like a palette swap
+    if (this.flash > 0 || this.flash === 0) {
       this.flash = Math.max(0, this.flash - dt * 6);
-      const k = Math.min(1, this.flash);
-      this.lineMat.color.copy(this.lineCol).lerp(FLASH_WHITE, k);
-    } else if (this.flash === 0) {
-      this.lineMat.color.copy(this.lineCol);
-      this.flash = -1;
+      const k = this.flash > 0.5 ? 1 : this.flash > 0.2 ? 0.5 : 0;
+      if (this.isPlayer) this.lineMat.color.copy(this.lineCol).lerp(FLASH_WHITE, k);
+      else for (const m of Object.values(this.toon)) m.emissive.setScalar(k * 0.85);
+      if (this.flash === 0) this.flash = -1;
     }
   }
 

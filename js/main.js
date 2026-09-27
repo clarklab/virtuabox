@@ -250,7 +250,7 @@ window.addEventListener('keydown', (e) => {
 function makeOpponent(i) {
   const o = R.OPPONENTS[i];
   opp?.dispose();
-  opp = new Boxer({ color: o.color, bulk: o.bulk, tall: o.tall, hair: o.hair, belt: o.belt });
+  opp = new Boxer({ color: o.color, look: o.look, bulk: o.bulk, tall: o.tall, hair: o.hair, belt: o.belt });
   opp.root.position.set(0, 0, OPP_Z);
   stage.scene.add(opp.root);
   document.documentElement.style.setProperty('--opp', o.color);
@@ -299,7 +299,7 @@ async function exchange(i, pm, om, my, demo = false) {
     const ko = !demo && G.oppHp - dmg <= 0;
     const power = ko ? 3 : res === 'trade' ? 0.8 : 0.9 + (streak - 1) * 0.35;
     opp.react(pm, Math.min(1.9, 0.85 + (streak - 1) * 0.25), player.handFor(pm));
-    stage.impact(gP, '#3dff72', power);
+    stage.impact(gP, '#58f858', power);
     sound.hit(power, pm === R.BODY);
     G.hitstop = ko ? 0.14 : 0.055 + streak * 0.02;
     if (!demo) {
@@ -424,6 +424,7 @@ async function knockout(victim, my) {
   G.timeScale = 0.28;
   sound.slowmo(true);
   victim.knockout();
+  if (victim === opp) stage.confetti();
   const focus = new THREE.Vector3();
   victim.root.getWorldPosition(focus);
   stage.shot('ko', { focus, rate: 5, yaw: victim === opp ? 1 : -1 });
@@ -462,7 +463,7 @@ async function introFight(i, my) {
   stage.shot('intro', { focus: new THREE.Vector3(0, 1.62 * o.tall, OPP_Z), rate: 6, snap: i === 0 });
   sound.riser();
   await wait(0.45);
-  stage.impact(new THREE.Vector3(0, 0.05, OPP_Z), o.color, 1.4);
+  stage.impact(new THREE.Vector3(0, 0.05, OPP_Z), '#f0f0f0', 1.4);
   sound.slam();
   sound.voice(['pete', 'nova', 'volt'][i], i === 0 ? 0.8 : 0.15); // let the title call finish
   haptic(40);
@@ -845,7 +846,11 @@ async function boot() {
   if (best) $('#best').textContent = `BEST ${best.toLocaleString()}`;
   setClock(G.clock);
   updateHud();
-  await Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 1500))]);
+  // the in-world signs are drawn with the pixel font, so let it arrive first
+  await Promise.race([
+    document.fonts?.load('16px "Press Start 2P"').then(() => document.fonts.ready),
+    new Promise((r) => setTimeout(r, 2000)),
+  ]);
   try {
     stage = new Stage($('#arena'));
   } catch (e) {
@@ -853,7 +858,7 @@ async function boot() {
     $('#nogl').classList.add('show');
     return;
   }
-  player = new Boxer({ color: '#3dff72', ghost: true });
+  player = new Boxer({ color: '#58f858', ghost: true });
   player.root.position.set(0, 0, PLAYER_Z);
   player.root.rotation.y = Math.PI;
   player.root.scale.setScalar(PLAYER_SCALE);

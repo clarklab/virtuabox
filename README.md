@@ -1,8 +1,9 @@
 # VIRTUABOX
 
-Up down all around. A two-minute, mobile-first neon boxing game: a green
-wireframe boxer in a 3D synthwave ring, a Punch-Out-style split screen, and
-rock-paper-scissors mind games at 60fps.
+Up down all around. A two-minute, mobile-first boxing game with a classic
+16-bit Nintendo look: a green wireframe boxer versus cel-shaded pixel
+fighters in a 3D ring rendered at SNES resolution, a Punch-Out-style split
+screen, and rock-paper-scissors mind games at 60fps.
 
 ![VIRTUABOX](og.jpg)
 
@@ -28,6 +29,18 @@ knockout) to share through the native share sheet, or to save/copy on desktop.
 Keyboard: `Q` jab, `W` hook, `A` body, `S` upper, `Backspace` to undo,
 `Enter` to start.
 
+## The 16-bit look
+
+- The 3D scene renders at roughly 232 rows (SNES territory) and is upscaled by a
+  whole number with `image-rendering: pixelated`, so every pixel is square.
+- A post pass quantizes to a small per-channel palette with a 4×4 Bayer ordered
+  dither, so light shafts and gradients break into classic dither patterns.
+- Opponents are cel-shaded (3-step toon ramp) with constant-width ink outlines.
+  You are a see-through green wireframe with a bold outline, like the Super
+  Punch-Out!! reference.
+- The UI uses Press Start 2P, SNES menu windows, and Super Famicom colored face
+  buttons for the punch pad.
+
 ## Run it
 
 It's a static site with no build step. Serve the folder with any web server:
@@ -46,13 +59,13 @@ index.html              page shell, HUD, deck, overlays, meta/OG tags
 styles.css              mobile-first layout (portrait split, landscape side-by-side)
 js/main.js              game flow: rounds, exchanges, scoring, HUD, results
 js/rules.js             move wheel, damage/score constants, opponent AI
-js/boxer.js             procedural wireframe boxer: 2-bone IK rig + punch/hit/KO animations
-js/stage.js             three.js scene: arena, crowd, sun, particles, camera shots, bloom
+js/boxer.js             procedural boxers (toon + ink outline, or green ghost wireframe), 2-bone IK, punch/hit/KO animations
+js/stage.js             three.js arena at ~232 rows, 16-bit palette + ordered-dither pass, pixel FX, camera shots
 js/audio.js             ElevenLabs samples + WebAudio synth fallback
-js/share.js             1080×1350 share card + share text
+js/share.js             1080×1352 pixel-art share card + share text
 js/vendor/three.js      tree-shaken three.js r186 bundle (generated)
 audio/                  generated SFX, announcer lines and soundtrack (mp3)
-icons/, og.jpg          favicon, PWA icons, social preview (generated)
+icons/, og.jpg          pixel-art favicon + PWA icons, social preview (generated)
 manifest.webmanifest    installable PWA manifest
 tools/                  asset/bundle generators
 ```
@@ -63,7 +76,7 @@ tools/                  asset/bundle generators
 # three.js bundle (after adding new THREE.* symbols to js/)
 npm i --no-save three@0.186.1 esbuild && node tools/build-vendor.mjs
 
-# PNG icons + og.jpg (renders the real 3D scene headlessly)
+# pixel icons (SVG + PNG) + og.jpg (renders the real 3D scene headlessly)
 npm i --no-save playwright-core && node tools/render-assets.mjs
 
 # SFX, announcer and music via ElevenLabs (delete a file to regenerate it)

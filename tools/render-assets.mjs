@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Renders the PNG icons (from icons/favicon.svg) and the 1200x630
+// Writes the pixel-art favicon/app icon SVGs, renders the PNG icons, and the 1200x630
 // og.jpg (a posed frame of the real 3D scene) with headless Chromium.
 //
 //   npm i --no-save playwright-core && node tools/render-assets.mjs
@@ -7,7 +7,7 @@
 // Set CHROMIUM=/path/to/chrome if Playwright's bundled browser isn't found.
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -38,20 +38,65 @@ const browser = await chromium.launch({
 });
 
 // ---- icons -------------------------------------------------------------------
-const svg = await readFile(join(root, 'icons', 'favicon.svg'), 'utf8');
+// A 16x16 boxing-glove sprite. K outline, R red, D shade, W shine, C cuff, G cuff shade.
+const GLOVE = `
+................
+.....KKKKKK.....
+....KRRRRRRKK...
+...KRWWRRRRRRK..
+..KRWWRRRRRRRRK.
+..KRWRRRRRRRRRK.
+.KKKRRRRRRRRRRK.
+KRRRKRRRRRRRRDK.
+KRWRRKRRRRRRRDK.
+KRRRRKRRRRRRDDK.
+.KRRRKRRRRRDDDK.
+..KKKRRRRRDDDK..
+...KKCCCCCCCK...
+...KCCCCCCCGK...
+...KKKKKKKKKK...
+................`.trim().split('\n');
+const PAL = { K: '#000000', R: '#e82818', D: '#901008', W: '#f8f8f8', C: '#f8f8f8', G: '#a0a0c0', Y: '#f8d830' };
+
+function spriteRects(rows, ox = 0, oy = 0) {
+  let out = '';
+  rows.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      const ch = row[x];
+      if (PAL[ch]) {
+        let e = x;
+        while (row[e] === ch) e++;
+        out += `<rect x="${x + ox}" y="${y + oy}" width="${e - x}" height="1" fill="${PAL[ch]}"/>`;
+        x = e;
+      } else x++;
+    }
+  });
+  return out;
+}
+
+const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">${spriteRects(GLOVE)}</svg>\n`;
+const sparkle = ['..Y..', '..Y..', 'YYYYY', '..Y..', '..Y..'];
+const appIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" shape-rendering="crispEdges">`
+  + '<rect width="20" height="20" fill="#182078"/><rect y="17" width="20" height="3" fill="#101058"/>'
+  + '<rect y="17" width="20" height="1" fill="#e82818"/>'
+  + spriteRects(GLOVE, 2, 2) + spriteRects(sparkle, 15, 1) + '</svg>\n';
+await writeFile(join(root, 'icons', 'favicon.svg'), favicon);
+await writeFile(join(root, 'icons', 'icon.svg'), appIcon);
+
 const icons = [
-  ['favicon-32.png', 32, 0],
-  ['apple-touch-icon.png', 180, 0],
-  ['icon-192.png', 192, 0],
-  ['icon-512.png', 512, 0],
-  ['icon-maskable-512.png', 512, 0.12], // keep the glove inside the safe zone
+  ['favicon-32.png', 32, favicon, 0, 'transparent'],
+  ['apple-touch-icon.png', 180, appIcon, 0, '#182078'],
+  ['icon-192.png', 192, appIcon, 0, '#182078'],
+  ['icon-512.png', 512, appIcon, 0, '#182078'],
+  ['icon-maskable-512.png', 512, appIcon, 0.1, '#182078'], // glove stays inside the safe zone
 ];
-for (const [name, size, pad] of icons) {
+for (const [name, size, svg, pad, bg] of icons) {
   const page = await browser.newPage({ viewport: { width: size, height: size } });
   const inner = Math.round(size * (1 - pad * 2));
-  await page.setContent(`<body style="margin:0;background:#05010c;display:grid;place-items:center;height:${size}px">
+  await page.setContent(`<body style="margin:0;background:${bg};display:grid;place-items:center;height:${size}px">
     <div style="width:${inner}px;height:${inner}px">${svg.replace('<svg ', `<svg width="${inner}" height="${inner}" `)}</div></body>`);
-  await page.screenshot({ path: join(root, 'icons', name) });
+  await page.screenshot({ path: join(root, 'icons', name), omitBackground: bg === 'transparent' });
   await page.close();
   console.log('icon', name);
 }

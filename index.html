@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>VIRTUABOX — 2-minute neon boxing</title>
-  <meta name="description" content="Call four punches, out-guess your opponent, and knock out three neon fighters in two minutes. A 3D wireframe boxing game for your phone.">
-  <meta name="theme-color" content="#05010c">
+  <title>VIRTUABOX — 2-minute 16-bit boxing</title>
+  <meta name="description" content="Call four punches, out-guess your opponent, and knock out three fighters in two minutes. A 16-bit style 3D boxing game for your phone.">
+  <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="dark">
 
   <link rel="manifest" href="manifest.webmanifest">
@@ -19,28 +19,28 @@
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="VIRTUABOX">
-  <meta property="og:title" content="VIRTUABOX — 2-minute neon boxing">
-  <meta property="og:description" content="Call four punches. Out-guess the opponent. Knock out three neon fighters in two minutes.">
+  <meta property="og:title" content="VIRTUABOX — 2-minute 16-bit boxing">
+  <meta property="og:description" content="Call four punches. Out-guess the opponent. Knock out three fighters in two minutes.">
   <meta property="og:image" content="og.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A green wireframe boxer squares off against a neon opponent in a synthwave ring">
+  <meta property="og:image:alt" content="A green wireframe boxer squares off against a pixel-art champion in a 16-bit boxing ring">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="VIRTUABOX — 2-minute neon boxing">
-  <meta name="twitter:description" content="Call four punches. Out-guess the opponent. Knock out three neon fighters in two minutes.">
+  <meta name="twitter:title" content="VIRTUABOX — 2-minute 16-bit boxing">
+  <meta name="twitter:description" content="Call four punches. Out-guess the opponent. Knock out three fighters in two minutes.">
   <meta name="twitter:image" content="og.jpg">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Orbitron:wght@700;900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="js/main.js"></script>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
-      <symbol id="arrow" viewBox="0 0 24 24"><path d="M5.5 18.5 18 6M8.5 6H18v9.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-      <symbol id="cycle" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 3.5v4.2h-4.2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="arrow" viewBox="0 0 10 10"><g fill="currentColor" shape-rendering="crispEdges"><rect x="3" y="0" width="7" height="1"/><rect x="3" y="1" width="7" height="1"/><rect x="7" y="2" width="3" height="1"/><rect x="6" y="3" width="4" height="1"/><rect x="5" y="4" width="2" height="1"/><rect x="8" y="4" width="2" height="1"/><rect x="4" y="5" width="2" height="1"/><rect x="8" y="5" width="2" height="1"/><rect x="3" y="6" width="2" height="1"/><rect x="8" y="6" width="2" height="1"/><rect x="2" y="7" width="2" height="1"/><rect x="1" y="8" width="2" height="1"/><rect x="0" y="9" width="2" height="1"/></g></symbol>
+      <symbol id="cycle" viewBox="0 0 12 12"><g fill="currentColor" shape-rendering="crispEdges"><rect x="4" y="0" width="5" height="1"/><rect x="2" y="1" width="8" height="1"/><rect x="1" y="2" width="3" height="1"/><rect x="7" y="2" width="2" height="1"/><rect x="1" y="3" width="2" height="1"/><rect x="0" y="4" width="2" height="1"/><rect x="10" y="4" width="2" height="1"/><rect x="0" y="5" width="2" height="1"/><rect x="10" y="5" width="2" height="1"/><rect x="0" y="6" width="2" height="1"/><rect x="10" y="6" width="2" height="1"/><rect x="0" y="7" width="2" height="1"/><rect x="10" y="7" width="2" height="1"/><rect x="1" y="8" width="2" height="1"/><rect x="9" y="8" width="2" height="1"/><rect x="1" y="9" width="3" height="1"/><rect x="8" y="9" width="3" height="1"/><rect x="2" y="10" width="8" height="1"/><rect x="4" y="11" width="4" height="1"/></g></symbol>
     </defs>
   </svg>
 
@@ -66,7 +66,7 @@
     </section>
 
     <!-- bezel between the two "monitors" -->
-    <div id="bezel"><span id="fightno">FIGHT <b>1</b>/3</span><em id="status">SCOUTING</em><span>WVBA</span></div>
+    <div id="bezel"><span id="fightno">FIGHT <b>1</b>/3</span><em id="status">SCOUTING</em><span>W.V.B.A.</span></div>
 
     <!-- BOTTOM SCREEN: the call sheet -->
     <section id="deck" aria-label="Controls">
@@ -96,14 +96,14 @@
         </button>
         <div class="hub" aria-hidden="true"><svg><use href="#cycle"/></svg></div>
       </div>
-      <p class="legend"><svg><use href="#cycle"/></svg> beats next clockwise · diagonal = <b class="y">TRADE</b> · same = <b class="c">CLASH</b></p>
+      <p class="legend"><span><svg><use href="#cycle"/></svg> BEATS NEXT CLOCKWISE</span> <span>DIAGONAL=<b class="y">TRADE</b> SAME=<b class="c">CLASH</b></span></p>
     </section>
 
     <!-- title -->
     <div id="title" class="overlay show">
       <div class="logo">
         <h1><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
-        <p class="tag">4 PUNCHES · 2 MINUTES · 3 KNOCKOUTS</p>
+        <p class="tag">4 PUNCHES · 2 MINUTES · 3 KOs</p>
       </div>
       <div class="howto">
         <div class="mini">
@@ -118,9 +118,10 @@
           <li>Each punch <b>beats the next one clockwise</b>. Diagonals <b class="y">trade</b>. Same punch <b class="c">clashes</b>.</li>
           <li>Read the <b class="p">intel</b>, chain wins for <b>combos</b>, and KO all three in <b>2:00</b>.</li>
         </ol>
-        <button id="start" class="cta">FIGHT!</button>
+        <button id="start" class="cta"><span class="blink">PRESS START</span></button>
         <div class="row-mini">
           <span id="best"></span>
+          <span class="copy">© 2026 W.V.B.A.</span>
           <button id="mute" class="ghost" aria-pressed="false">SOUND: ON</button>
         </div>
       </div>
@@ -131,7 +132,7 @@
       <div class="card">
         <div class="fightbadge">FIGHT <b id="vs-n">#1</b></div>
         <div class="versus">
-          <div class="side you"><small>WVBA CHALLENGER</small><strong>YOU</strong></div>
+          <div class="side you"><small>CHALLENGER</small><strong>YOU</strong></div>
           <div class="vs-word">VS.</div>
           <div class="side opp"><small id="vs-title">THE ROOKIE</small><strong id="vs-name">PIXEL PETE</strong></div>
         </div>
@@ -173,8 +174,8 @@
     <div id="ogcard" class="overlay" aria-hidden="true">
       <div class="logo">
         <h1><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
-        <p class="tag">4 PUNCHES · 2 MINUTES · 3 KNOCKOUTS</p>
-        <p class="og-sub">Out-guess. Out-punch. Go the distance.</p>
+        <p class="tag">4 PUNCHES · 2 MINUTES · 3 KOs</p>
+        <p class="og-sub">OUT-GUESS. OUT-PUNCH.</p>
       </div>
     </div>
 
