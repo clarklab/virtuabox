@@ -108,6 +108,7 @@ const WINDUP = 0.085;
 const HOLD = 0.07;
 const RETRACT = 0.26;
 const TELL_WIND = 1.7; // a held tell winds up further than a normal punch
+export const SUPER_WIND = 2.4; // the SUPER coils lower still
 
 const PUNCH_STYLE = {
   [JAB]: { windup: [0, -0.02, -0.09], bend: [0, 0.02, 0], twist: 0.3, lean: 0.12, crouch: 0, flare: 0.05, step: 0.07 },
@@ -137,6 +138,7 @@ export class Boxer {
     this.materials = [];
     this.geometries = [];
     this.flash = 0;
+    this.glow = 0; // SUPER charge level (player)
 
     if (ghost) {
       // Depth-only prepass hides the far side of the wireframe while the
@@ -408,7 +410,8 @@ export class Boxer {
    * `victim` is the other Boxer; `clashPoint` a world position.
    * opts.hand: screen side of the throwing glove (overrides the move's default)
    * opts.target: world point to hit instead (e.g. the glove that blocks it)
-   * opts.fromWindup: continue from a held windup() pose instead of winding up
+   * opts.fromWindup: continue from a held windup() / charge() pose instead of winding up
+   * opts.wind: how far that held pose was wound up (TELL_WIND by default)
    */
   punch(move, result, victim, clashPoint, opts = {}) {
     const hs = opts.hand != null ? (this.isPlayer ? -opts.hand : opts.hand) : this.handFor(move);
@@ -447,7 +450,7 @@ export class Boxer {
     const lunge = st.step + Math.max(0, shortfall - st.step);
     T.z -= lunge * reach;
 
-    const W = new Vector3(st.windup[0] * hs, st.windup[1], st.windup[2]).multiplyScalar(opts.fromWindup ? TELL_WIND : 1);
+    const W = new Vector3(st.windup[0] * hs, st.windup[1], st.windup[2]).multiplyScalar(opts.wind ?? (opts.fromWindup ? TELL_WIND : 1));
     const bend = new Vector3(st.bend[0] * hs, st.bend[1], st.bend[2]);
     const S = new Vector3();
     const C = new Vector3();
@@ -534,6 +537,59 @@ export class Boxer {
       },
     });
     return this.tellClip;
+  }
+
+  /**
+   * SUPER wind-up: coil low with the throwing glove dropped to the hip,
+   * trembling harder the longer it charges. Held until
+   * punch(UPPER, ..., { fromWindup: true, wind: SUPER_WIND }).
+   */
+  charge(hand) {
+    this.release();
+    const hs = this.isPlayer ? -hand : hand;
+    const gi = hs > 0 ? 0 : 1;
+    const st = PUNCH_STYLE[UPPER];
+    const W = new Vector3(st.windup[0] * hs, st.windup[1], st.windup[2]).multiplyScalar(SUPER_WIND);
+    this.tellClip = this.play({
+      dur: Infinity,
+      body: (p, t) => {
+        const k = easeOut(clamp01(t / 0.3));
+        const shake = Math.min(1, t / 1.6);
+        p.crouch += 0.2 * k;
+        p.twist += hs * 0.28 * k;
+        p.lean += 0.06 * k;
+        p.x += Math.sin(t * 64) * 0.016 * shake;
+        p.y += Math.abs(Math.sin(t * 9)) * 0.012 * shake;
+      },
+      hands: (p, t) => {
+        const k = easeOut(clamp01(t / 0.3));
+        (gi === 0 ? p.gL : p.gR).addScaledVector(W, k);
+        (gi === 0 ? p.gR : p.gL).y += 0.04 * k;
+      },
+    });
+    return this.tellClip;
+  }
+
+  /** Hit by the SUPER: lifted off the canvas, head snapped back, lands hard. */
+  launch(power = 1) {
+    this.flash = 1.4;
+    return this.play({
+      dur: 1.15,
+      body: (p, t) => {
+        const k = clamp01(t / 0.7);
+        const back = t < 0.7 ? easeOut(k) : 1 - easeInOut(clamp01((t - 0.7) / 0.45));
+        p.y += Math.sin(k * Math.PI) * 0.4 * power;
+        p.z -= 0.32 * power * back;
+        p.hp -= 0.95 * Math.exp(-t * 2.4) * power;
+        p.lean -= 0.5 * Math.sin(k * Math.PI) * power;
+        if (t > 0.7) p.crouch += 0.26 * Math.exp(-(t - 0.7) * 8);
+      },
+      hands: (p, t) => {
+        const r = Math.exp(-t * 2.2) * power;
+        p.gL.x += 0.2 * r; p.gR.x -= 0.2 * r;
+        p.gL.y += 0.12 * r; p.gR.y += 0.12 * r;
+      },
+    });
   }
 
   release() {
@@ -822,6 +878,13 @@ export class Boxer {
       if (this.isPlayer) this.lineMat.color.copy(this.lineCol).lerp(FLASH_WHITE, k);
       else for (const m of Object.values(this.toon)) m.emissive.setScalar(k * 0.85);
       if (this.flash === 0) this.flash = -1;
+    }
+    // SUPER charge: the ghost's outline and gloves strobe gold, faster per star
+    if (this.isPlayer && (this.glow > 0 || this.glowOn)) {
+      this.glowOn = this.glow > 0;
+      const on = this.glowOn && Math.floor(time * (7 + this.glow * 5)) % 2 === 0;
+      this.gloveLineMat.color.set(!this.glowOn ? '#30c040' : on ? '#fff4a0' : '#f8b800');
+      this.hullMat.uniforms.uColor.value.set(!this.glowOn ? PLAYER_GREEN : this.glow >= 2 && on ? '#f8d830' : PLAYER_GREEN);
     }
     // tell: the glove about to fire blinks hot (gold for the mega uppercut)
     if (this.tellGlove != null && !this.isPlayer) {

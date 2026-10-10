@@ -131,6 +131,7 @@ export class Screen2 {
     if (this.cur) this.view(this.cur).classList.remove('show', 'closing');
     this.cur = null;
     this.root.classList.remove('show');
+    this.root.dataset.view = '';
     this.cover.inert = false;
   }
 
@@ -152,6 +153,7 @@ export class Screen2 {
       return;
     }
     this.root.classList.add('show');
+    this.root.dataset.view = name;
     this.cover.inert = true;
     const v = this.view(name);
     v.classList.remove('show');

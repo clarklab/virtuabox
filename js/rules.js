@@ -78,7 +78,9 @@ export const KO_HEAL = 30;
 export const MAX_STARS = 3;
 export const MAX_CHAIN = 4;
 export const PUNCH_DMG = 7;
-export const SUPER_DMG = 16; // per star spent
+// SUPER uppercut damage by stars spent: saving up all three pays off big
+export const SUPER_DMG = [0, 20, 44, 76];
+export const superCharge = (stars) => 0.55 + 0.42 * stars; // seconds of wind-up
 export const BLOCK_CHIP = 0.35; // damage taken when you block the wrong attack
 export const COUNTER_MULT = 1.5; // damage bonus while they're wide open
 
@@ -90,7 +92,7 @@ export const SCORE = {
   punch: 100, // × chain position
   counter: 2, // punch score multiplier while they're open
   flurry: 300, // land the full chain
-  super: 400, // × stars spent
+  super: 400, // × stars spent, squared
   ko: 1000, // × fight number
   hpBonus: 10, // per remaining player HP at each KO
   timeBonus: 50, // per second left when you win it all

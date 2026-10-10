@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.js';
 import { Stage, PLAYER_Z, OPP_Z, PLAYER_SCALE } from './stage.js';
-import { Boxer, IMPACT } from './boxer.js';
+import { Boxer, IMPACT, SUPER_WIND } from './boxer.js';
 import { Sound } from './audio.js';
 import * as R from './rules.js';
 import { renderCard, canvasToBlob, shareText, systemShare, HEADLINES } from './share.js';
@@ -81,7 +81,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(`virtuabox.${k}`, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 const loadBest = () => Number(store.get('best', 0)) || 0;
-const gymDone = () => new Set(store.get('gym', []));
+const gymDone = () => new Set(store.get('gym', []).filter((id) => LESSONS.some((L) => L.id === id)));
 function markDone(id) {
   const d = gymDone();
   d.add(id);
@@ -622,7 +622,7 @@ async function attackTurn(defRes, ctx) {
     if (live) renderPad(guard);
     const total = o.window * Math.pow(0.85, i) * (stunned ? 0.75 : 1) * (open && i === 0 ? 1.2 : 1);
     const switchAt = !open && !guard.startsWith('tight') && Math.random() < o.guardSwitch ? 0.45 + Math.random() * 0.15 : null;
-    const choice = live ? await waitPunch(total, switchAt) : await botPunch(total, ctx);
+    const choice = live ? await waitPunch(total, switchAt) : await botPunch(total, ctx, switchAt);
     if (gone(ctx)) return log;
     if (choice === 'timeout') {
       if (live && G.clock > 0) popup('TOO SLOW', 'sm lose', 600);
@@ -714,9 +714,16 @@ function waitPunch(total, switchAt) {
   });
 }
 
-/** The demo boxer: mostly finds the opening. */
-async function botPunch(total, ctx) {
-  await wait(total * (ctx.show ? 0.35 : 0.3 + Math.random() * 0.3));
+/** The demo boxer: mostly finds the opening (booklet demos wait out a guard switch). */
+async function botPunch(total, ctx, switchAt) {
+  if (switchAt && ctx.show) {
+    await wait(total * switchAt);
+    if (gone(ctx)) return 'timeout';
+    switchGuard();
+    await wait(total * 0.14);
+  } else {
+    await wait(total * (ctx.show ? 0.35 : 0.3 + Math.random() * 0.3));
+  }
   if (ctx.botSuper) {
     ctx.botSuper = false;
     return 'super';
@@ -738,41 +745,92 @@ function switchGuard() {
   sound.tick(true);
 }
 
+// SUPER camera: a low side angle on the coil, then a cut to look up at the hit
+const SUPER_CAM = {
+  coil: { pos: new THREE.Vector3(1.55, 0.8, 1.7), look: new THREE.Vector3(-0.05, 1.0, 0.25), hfov: 52 },
+  push: { pos: new THREE.Vector3(1.15, 0.78, 1.3), look: new THREE.Vector3(-0.05, 1.02, 0.2), hfov: 48 },
+  hit: { pos: new THREE.Vector3(-1.05, 0.55, 0.5), look: new THREE.Vector3(0.05, 1.55, OPP_Z), hfov: 56 },
+};
+const superFx = $('#superfx');
+
+/**
+ * The SUPER: each banked star drains out of the meter and into the glove
+ * (a longer, louder charge per star), then a slow-motion uppercut that
+ * launches them. Damage climbs steeply, so saving all three pays off.
+ */
 async function superPunch(ctx) {
   const live = !ctx.demo;
+  const vis = live || ctx.show;
   const n = live ? G.stars : R.MAX_STARS;
-  if (live) setStars(0);
+  const clockWas = G.clockOn;
+  G.clockOn = false; // the cinematic doesn't eat the fight clock
+  const glove = () => player.gloveWorld(-1, new THREE.Vector3());
+  showTargets(null);
   opp.setGuard('open');
-  if (live || ctx.show) {
-    popup('SUPER!', 'xl gold', 900);
-    sound.riser();
+  player.charge(1);
+  player.glow = 0.5;
+  superFx.className = 'on';
+  stage.shot('custom', { ...SUPER_CAM.coil, rate: 6 });
+  sound.riser();
+  if (vis) popup('SUPER!', 'xl gold', 700);
+  haptic(30);
+  const step = (R.superCharge(n) - 0.35) / n;
+  await wait(0.35);
+  for (let k = 1; k <= n; k++) {
+    if (gone(ctx)) return;
+    if (live) setStars(G.stars - 1);
+    player.glow = k;
+    superFx.className = `on l${k}`;
+    stage.charge(glove(), k);
+    sound.charge(k);
+    if (k === 2) stage.shot('custom', { ...SUPER_CAM.push, rate: 2 });
+    if (vis) popup(k === R.MAX_STARS ? 'MAX POWER!' : `POWER ${k}`, 'sm gold', 600);
+    haptic(12 * k);
+    await wait(step);
   }
-  G.timeScale = 0.45;
-  player.punch(R.UPPER, 'land', opp, null, { hand: 1 });
-  await wait(IMPACT);
+  if (gone(ctx)) return;
+
+  // release: cut low and slow everything down into the hit
+  superFx.className = `on l${Math.max(1, n)}`;
+  stage.shot('custom', { ...SUPER_CAM.hit, snap: true });
+  G.timeScale = 0.3;
+  const clip = player.punch(R.UPPER, 'land', opp, null, { hand: 1, fromWindup: true, wind: SUPER_WIND });
+  sound.whoosh();
+  await wait(clip.impactIn);
   if (gone(ctx)) return;
   G.timeScale = 1;
-  const dmg = R.SUPER_DMG * n;
+  player.glow = 0;
+  superFx.className = 'flash';
+  const dmg = R.SUPER_DMG[n];
   const pos = opp.headWorld(new THREE.Vector3());
   opp.react(R.UPPER, 2.2, -1);
-  stage.impact(pos, '#f8d830', 2.6);
-  stage.confetti(60);
-  sound.hit(2.6);
-  G.hitstop = 0.16;
+  opp.launch(0.55 + n * 0.25);
+  stage.superHit(pos, n);
+  stage.confetti(60 + n * 40);
+  sound.hit(3);
+  sound.slam();
+  sound.cheer(1);
+  G.hitstop = 0.24;
   quake();
-  haptic([50, 30, 50]);
+  haptic([60, 30, 90]);
+  if (vis) {
+    popup(n === R.MAX_STARS ? 'MEGA SUPER!' : 'SUPER UPPERCUT!', 'xl gold', 1100);
+    setTimeout(() => popup(`${dmg} DAMAGE!`, 'sm gold', 900), 280);
+  }
   if (live) {
     G.supers++;
     G.oppHp = Math.max(0, G.oppHp - dmg);
-    G.score += R.SCORE.super * n;
+    G.score += R.SCORE.super * n * n;
     if (!ctx.train) {
       G.highlight = 50;
       stage.capture();
     }
-    floatNum(`-${dmg}`, pos);
     updateHud();
   }
-  await wait(0.35);
+  await wait(0.75);
+  superFx.className = '';
+  G.clockOn = clockWas && G.clock > 0;
+  stage.shot('fight', { rate: 4 });
 }
 
 /** One fight: alternate their turn / your turn until someone drops or time runs out. */
@@ -1418,7 +1476,11 @@ function gymReset() {
   opp.clear();
   G.hp = R.PLAYER_HP;
   G.oppHp = G.oppMax;
+  G.oppDef = R.COACH;
 }
+
+/** Some lessons tweak how Pops fights (e.g. always switching his guard). */
+const coachFor = (L) => ({ ...R.COACH, ...(L.drill.coach || {}) });
 
 function openLesson(n) {
   const my = ++gen;
@@ -1427,7 +1489,7 @@ function openLesson(n) {
   gymReset();
   setStatus(`LESSON ${n + 1} · ${L.name}`);
   $('#ls-no').textContent = `LESSON ${n + 1}`;
-  $('#ls-name').textContent = L.name;
+  $('#ls-name').textContent = L.title || L.name;
   $('#ls-page').textContent = `${n + 1}/${LESSONS.length}`;
   $('#ls-diagram').innerHTML = L.diagram();
   $('#ls-say').innerHTML = L.say;
@@ -1435,6 +1497,7 @@ function openLesson(n) {
   sound.ui('page');
   screen2.show('lesson', { menu: lessonMenu, focus: 'try' });
   stage.shot('fight', { rate: 3, lift: L.drill.kind === 'defend' ? 0 : 0.38, dolly: L.drill.kind === 'defend' ? 0 : 0.2 });
+  G.oppDef = coachFor(L);
   lessonDemo(L, { my, demo: true, show: true, acc: 1 });
 }
 
@@ -1481,6 +1544,7 @@ async function runLesson(n) {
   const L = LESSONS[n];
   const D = L.drill;
   gymReset();
+  G.oppDef = coachFor(L);
   G.tutorAttack = 9; // the coach does the talking
   await screen2.show(null);
   if (gone(ctx)) return;

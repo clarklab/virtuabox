@@ -27,13 +27,18 @@ Every exchange is two turns, each a single decision with instant payoff.
    Hit a glove and your turn ends. After a perfect read they're wide open
    (**COUNTER!**); after you got tagged they tighten up to a single opening.
 3. **★ SUPER.** Tap the star in the middle of the pad for an unblockable
-   uppercut: 16 damage per star you've banked.
+   uppercut. Your stars drain into the glove one at a time as it charges
+   (speed lines, golden aura, a rising sound), then a slow-motion uppercut
+   lifts them off the canvas. Saving up pays: 1 star does 20 damage, 2 do 44,
+   all 3 do 76.
 
 KO all three fighters before the **2:00** clock runs out.
 
 New to it? Pick **TRAINING GYM** from the main menu. Coach Pops walks you
-through the instruction booklet one move per page (slip, duck, block, read it,
-punch, combo, counter, super, dirty tricks). Each page has a move table and a
+through the instruction booklet one move per page: slip, duck, block, read it,
+punch, combo, counter and super, then the champs' tricks (feint, double attack,
+mega uppercut, guard switch). Pages use plain sentences with pictures of the
+buttons. Each page has a move table and a
 live demo in the ring above it. Press **TRY IT** to drill that move with the
 real controls until you pass. Progress is saved, and clearing every lesson
 earns a graduation page that sends you straight into the fight.

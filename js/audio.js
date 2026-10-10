@@ -513,6 +513,14 @@ export class Sound {
     }
   }
 
+  /** SUPER charge: a rising arpeggio and a swelling hiss per star. */
+  charge(level = 1) {
+    if (!this.ctx) return;
+    const b = 60 + level * 5;
+    this.#blip([[b, 0], [b + 7, 0.05], [b + 12, 0.1], [b + 19, 0.15]], { peak: 0.08, decay: 0.09 });
+    this.#noiseHit(this.now, { dest: this.sfx, type: 'bandpass', freq: 1200 + level * 900, q: 1.2, peak: 0.12 + level * 0.04, decay: 0.3, attack: 0.15 });
+  }
+
   /** Menu and booklet sounds. */
   ui(kind) {
     if (!this.ctx) return;

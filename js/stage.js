@@ -469,6 +469,40 @@ export class Stage {
     this.flash(pal[1], 0.18);
   }
 
+  /** SUPER charge: sparks spiral into the glove; each `level` (1..3) grows the aura. */
+  charge(pos, level) {
+    const pal = [new Color('#ffffff'), new Color('#f8e060'), new Color('#f8a800')];
+    const n = 26 + level * 16;
+    for (let i = 0; i < n; i++) {
+      _v.randomDirection().multiplyScalar(0.5 + Math.random() * 0.5);
+      _v2.copy(pos).add(_v);
+      const life = 0.26 + Math.random() * 0.14;
+      _v.multiplyScalar(-1.2 / life);
+      this.spawn(_v2, _v, pal[i % 3], 0.016 + 0.008 * level, life, 0);
+    }
+    this.ring(pos, pal[1], 0.22 + level * 0.12, 0.36);
+    this.star(pos, pal[0], 0.18 + level * 0.1);
+    this.shake(0.1 + level * 0.08);
+    this.flash(pal[1], 0.07 + level * 0.04);
+    this.hype = Math.min(1, this.hype + 0.3);
+  }
+
+  /** The SUPER connects: a geyser of sparks, stacked shockwaves and a white-out. */
+  superHit(pos, level) {
+    this.impact(pos, '#f8d830', 3);
+    const pal = [new Color('#ffffff'), new Color('#f8e060'), new Color('#f8a800'), new Color('#58f858')];
+    for (let i = 0; i < 80 + level * 40; i++) {
+      _v.set((Math.random() - 0.5) * 2.4, 2 + Math.random() * 6, (Math.random() - 0.5) * 2.4);
+      this.spawn(pos, _v, pal[i % 4], 0.024 + Math.random() * 0.022, 0.5 + Math.random() * 0.6, 0.7);
+    }
+    [0.55, 0.85, 1.2].forEach((sz, i) => this.ring(pos, pal[i % 3], sz * (0.75 + level * 0.15), 0.3 + i * 0.14));
+    this.star(pos, pal[0], 0.9);
+    this.flash(pal[0], 0.55);
+    this.shake(1);
+    this.fovKick = -16;
+    this.hype = 1;
+  }
+
   /** A dodged punch: a white swish where your head used to be. */
   whiff(pos) {
     const white = new Color('#ffffff');
