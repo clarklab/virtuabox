@@ -1,7 +1,9 @@
 // Score card: a 1080x1352 pixel-art PNG with the knockout frame, the score,
-// and a Wordle-style grid of every exchange.
+// and a Wordle-style grid of every exchange: your read first (blue perfect,
+// yellow blocked, red tagged), then each punch (green landed, grey blocked,
+// gold super).
 
-const RESULT_EMOJI = { win: '🟩', lose: '🟥', trade: '🟨', clash: '🟦' };
+const RESULT_EMOJI = { perfect: '🟦', block: '🟨', hit: '🟥', land: '🟩', blocked: '⬛', super: '⭐' };
 export const HEADLINES = { champ: 'CHAMPION!', time: 'TIME!', ko: 'KNOCKED OUT' };
 
 const fmt = (n) => n.toLocaleString('en-US');
@@ -18,14 +20,14 @@ export function shareText(s) {
     .join('\n');
   return [
     `VIRTUABOX 🥊 ${fmt(s.score)} pts — ${s.rank}`,
-    `${HEADLINES[s.reason]} · KOs ${s.kos}/3 · best combo x${s.bestCombo}`,
+    `${HEADLINES[s.reason]} · KOs ${s.kos}/3 · reads ${s.readPct}% · best combo x${s.bestCombo}`,
     grid,
     playUrl(),
   ].join('\n');
 }
 
 const FONT = '"Press Start 2P", monospace';
-const COLORS = { win: '#58f858', lose: '#e82818', trade: '#f8d830', clash: '#40c8f8' };
+const COLORS = { perfect: '#40c8f8', block: '#f8d830', hit: '#e82818', land: '#58f858', blocked: '#686880', super: '#f8a800' };
 
 /** Pixel-font text with a hard black outline (and optional extrusion). */
 function pixelText(g, text, x, y, size, color, { outline = size / 8, extrude = null } = {}) {
@@ -112,7 +114,7 @@ export function renderCard(s, capture) {
   pixelText(g, fmt(s.score), W / 2, 976, 80, '#f8f8f8', { outline: 8 });
   pixelText(g, s.rank, W / 2, 1036, 24, '#58f858');
 
-  const stats = [['KOs', `${s.kos}/3`], ['HITS', String(s.hits)], ['BEST', `x${s.bestCombo}`], ['WIN%', `${s.winPct}`]];
+  const stats = [['KOs', `${s.kos}/3`], ['READS', `${s.readPct}%`], ['BEST', `x${s.bestCombo}`], ['SUPERS', String(s.supers)]];
   const bw = 208;
   const gap = 16;
   const bx0 = (W - (bw * 4 + gap * 3)) / 2;
@@ -126,27 +128,39 @@ export function renderCard(s, capture) {
     pixelText(g, label, x + bw / 2, 1152, 16, '#a0a0c0', { outline: 0 });
   });
 
-  // exchange grid
-  const rounds = s.rounds.slice(0, 16);
+  // exchange grid: rows of variable-length groups, centred
+  const rounds = s.rounds.slice(0, 18);
   const cell = 20;
   const cg = 4;
-  const groupW = cell * 4 + cg * 3;
-  const perRow = 8;
-  const colGap = 16;
-  rounds.forEach((r, ri) => {
-    const row = Math.floor(ri / perRow);
-    const col = ri % perRow;
-    const inRow = Math.min(perRow, rounds.length - row * perRow);
-    const totalW = inRow * groupW + (inRow - 1) * colGap;
-    const x0 = Math.round((W - totalW) / 2 / 4) * 4 + col * (groupW + colGap);
-    const y0 = 1240 + row * (cell + 8);
-    r.forEach((res, k) => {
-      g.fillStyle = COLORS[res];
-      g.fillRect(x0 + k * (cell + cg), y0, cell, cell);
-      g.fillStyle = 'rgba(0,0,0,0.35)';
-      g.fillRect(x0 + k * (cell + cg) + cell - 4, y0 + 4, 4, cell - 4);
-      g.fillRect(x0 + k * (cell + cg) + 4, y0 + cell - 4, cell - 4, 4);
-    });
+  const colGap = 20;
+  const maxW = W - 160;
+  const groupW = (r) => r.length * cell + (r.length - 1) * cg;
+  const rows = [[]];
+  let rowW = 0;
+  for (const r of rounds) {
+    const w = groupW(r) + (rows[rows.length - 1].length ? colGap : 0);
+    if (rowW + w > maxW && rows[rows.length - 1].length) {
+      rows.push([]);
+      rowW = 0;
+    }
+    rowW += groupW(r) + (rows[rows.length - 1].length ? colGap : 0);
+    rows[rows.length - 1].push(r);
+  }
+  rows.slice(0, 3).forEach((row, ri) => {
+    const total = row.reduce((sum, r, i) => sum + groupW(r) + (i ? colGap : 0), 0);
+    let x = Math.round((W - total) / 2 / 4) * 4;
+    const y0 = 1232 + ri * (cell + 8);
+    for (const r of row) {
+      r.forEach((res, k) => {
+        const cx = x + k * (cell + cg);
+        g.fillStyle = COLORS[res] || '#686880';
+        g.fillRect(cx, y0, cell, cell);
+        g.fillStyle = 'rgba(0,0,0,0.35)';
+        g.fillRect(cx + cell - 4, y0 + 4, 4, cell - 4);
+        g.fillRect(cx + 4, y0 + cell - 4, cell - 4, 4);
+      });
+      x += groupW(r) + colGap;
+    }
   });
 
   const host = playUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');

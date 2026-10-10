@@ -430,6 +430,24 @@ export class Sound {
     this.crowd(1, 2.2);
   }
 
+  /** Telegraph blip as an opponent winds up; a double blip when a feint switches. */
+  tell(mega = false, feint = false) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const notes = feint ? [1568, 1175] : mega ? [392, 523, 784] : [988, 1319];
+    notes.forEach((f, i) => {
+      const t = this.now + i * 0.055;
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      this.#env(g, t, 0.002, mega ? 0.12 : 0.08, 0.06);
+      o.connect(g).connect(this.sfx);
+      o.start(t);
+      o.stop(t + 0.1);
+    });
+  }
+
   tick(urgent = false) {
     if (!this.ctx) return;
     const ctx = this.ctx;

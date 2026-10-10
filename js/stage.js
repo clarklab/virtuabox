@@ -388,10 +388,24 @@ export class Stage {
     this.flash(pal[1], 0.18);
   }
 
+  /** A dodged punch: a white swish where your head used to be. */
+  whiff(pos) {
+    const white = new Color('#ffffff');
+    const pale = new Color('#a0e8ff');
+    for (let i = 0; i < 18; i++) {
+      _v.randomDirection();
+      _v.y *= 0.4;
+      _v.multiplyScalar(1 + Math.random() * 2);
+      this.spawn(pos, _v, i % 3 ? pale : white, 0.016, 0.18 + Math.random() * 0.15, 0);
+    }
+    this.ring(pos, white, 0.3, 0.22);
+    this.shake(0.12);
+  }
+
   /** Knockout confetti rains from the rafters. */
-  confetti() {
+  confetti(count = 220) {
     const pal = ['#e83030', '#3060e8', '#f8d030', '#30b848', '#f0f0f0', '#f048b0'].map((c) => new Color(c));
-    for (let i = 0; i < 220; i++) {
+    for (let i = 0; i < count; i++) {
       _v2.set((Math.random() - 0.5) * 6, 4 + Math.random() * 2.5, (Math.random() - 0.5) * 6);
       _v.set((Math.random() - 0.5) * 1.5, -Math.random(), (Math.random() - 0.5) * 1.5);
       this.spawn(_v2, _v, pal[i % pal.length], 0.035, 2.5 + Math.random() * 1.5, 0.12);

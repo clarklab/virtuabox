@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.js';
-import { JAB, HOOK, UPPER, BODY, MOVES } from './rules.js';
+import { JAB, HOOK, UPPER, BODY, MOVES, GUARD_POSE } from './rules.js';
 
 const { Vector3, Group, Mesh, Matrix4, Color } = THREE;
 
@@ -107,6 +107,7 @@ export const IMPACT = 0.25;
 const WINDUP = 0.085;
 const HOLD = 0.07;
 const RETRACT = 0.26;
+const TELL_WIND = 1.7; // a held tell winds up further than a normal punch
 
 const PUNCH_STYLE = {
   [JAB]: { windup: [0, -0.02, -0.09], bend: [0, 0.02, 0], twist: 0.3, lean: 0.12, crouch: 0, flare: 0.05, step: 0.07 },
@@ -155,7 +156,8 @@ export class Boxer {
         skin: toon(look.skin || '#f0b080'),
         trunks: toon(look.trunks || o.color),
         band: toon('#f8f8f8'),
-        gloves: toon(look.gloves || '#e02020'),
+        glove0: toon(look.gloves || '#e02020'),
+        glove1: toon(look.gloves || '#e02020'),
         boots: toon(look.boots || '#f0f0f0'),
         hair: toon(look.hair || '#202020'),
         gold: toon('#f8d030'),
@@ -221,7 +223,7 @@ export class Boxer {
     else {
       const bandGeo = cyl(0.1, 0.1, 0.03, 8);
       bandGeo.translate(0, 0.045, 0);
-      this.#part(bandGeo, this.head, 'gloves');
+      this.#part(bandGeo, this.head, 'glove0');
     }
 
     // trunks + waistband (+ title belt)
@@ -255,8 +257,8 @@ export class Boxer {
       this.torso.add(upper, fore, glove);
       this.#part(upperGeo, upper, 'skin');
       this.#part(foreGeo, fore, 'skin');
-      this.#part(gloveGeo, glove, 'gloves');
-      this.#part(cuffGeo, glove, ghost ? 'gloves' : 'band');
+      this.#part(gloveGeo, glove, side > 0 ? 'glove0' : 'glove1');
+      this.#part(cuffGeo, glove, ghost ? 'glove0' : 'band');
       return {
         side, upper, fore, glove,
         shoulder: new Vector3(side * D.shoulderX, D.shoulderY, 0),
@@ -293,6 +295,13 @@ export class Boxer {
       gL: new Vector3(), gR: new Vector3(),
     };
     this.clips = [];
+    this.stance = 'base';
+    this.stanceSide = 0;
+    this.gs = this.arms.map((a) => a.guard.clone()); // smoothed glove targets (torso space)
+    this._st = [new Vector3(), new Vector3()];
+    this.tellClip = null;
+    this.tellGlove = null;
+    this.defClip = null;
     this.bps = 2.5; // idle bounce synced to the 150bpm soundtrack
     this.phase = Math.random() * 10;
     this.update(0, 0);
@@ -316,7 +325,7 @@ export class Boxer {
       const fill = new Mesh(geo, this.fillMat);
       fill.renderOrder = 100;
       hull.renderOrder = 101;
-      const lines = new THREE.LineSegments2(this.#geo(edgeLines(geo)), kind === 'gloves' ? this.gloveLineMat : this.lineMat);
+      const lines = new THREE.LineSegments2(this.#geo(edgeLines(geo)), kind.startsWith('glove') ? this.gloveLineMat : this.lineMat);
       lines.renderOrder = 102;
       parent.add(fill, hull, lines);
     } else {
@@ -382,7 +391,10 @@ export class Boxer {
 
   // ---- animation ----------------------------------------------------------
   clear() {
+    this.release();
     this.clips.length = 0;
+    this.defClip = null;
+    this.setGuard('base');
   }
 
   play(clip) {
@@ -394,9 +406,12 @@ export class Boxer {
   /**
    * Throw `move`. `result` is 'land' | 'clash' | 'stuffed' | 'whiff'.
    * `victim` is the other Boxer; `clashPoint` a world position.
+   * opts.hand: screen side of the throwing glove (overrides the move's default)
+   * opts.target: world point to hit instead (e.g. the glove that blocks it)
+   * opts.fromWindup: continue from a held windup() pose instead of winding up
    */
-  punch(move, result, victim, clashPoint) {
-    const hs = this.handFor(move);
+  punch(move, result, victim, clashPoint, opts = {}) {
+    const hs = opts.hand != null ? (this.isPlayer ? -opts.hand : opts.hand) : this.handFor(move);
     const gi = hs > 0 ? 0 : 1;
     const st = PUNCH_STYLE[move];
     this.root.updateMatrixWorld(true);
@@ -405,7 +420,10 @@ export class Boxer {
     // target in rig space, frozen at the start of the punch
     const reach = result === 'stuffed' ? 0.42 : 1;
     const T = new Vector3();
-    if (result === 'clash') {
+    const aimed = !!opts.target;
+    if (aimed) {
+      T.copy(opts.target);
+    } else if (result === 'clash') {
       T.copy(clashPoint);
     } else if (MOVES[move].high) {
       victim.headWorld(T);
@@ -413,7 +431,7 @@ export class Boxer {
       victim.chestWorld(T);
     }
     this.rig.worldToLocal(T);
-    if (result !== 'clash') {
+    if (result !== 'clash' && !aimed) {
       if (move === JAB) T.x += hs * 0.035;
       if (move === HOOK) T.x -= hs * 0.02;
       if (move === UPPER) { T.y -= 0.07; T.x += hs * 0.01; }
@@ -429,7 +447,7 @@ export class Boxer {
     const lunge = st.step + Math.max(0, shortfall - st.step);
     T.z -= lunge * reach;
 
-    const W = new Vector3(st.windup[0] * hs, st.windup[1], st.windup[2]);
+    const W = new Vector3(st.windup[0] * hs, st.windup[1], st.windup[2]).multiplyScalar(opts.fromWindup ? TELL_WIND : 1);
     const bend = new Vector3(st.bend[0] * hs, st.bend[1], st.bend[2]);
     const S = new Vector3();
     const C = new Vector3();
@@ -448,7 +466,7 @@ export class Boxer {
     };
     const wind = (t) => (t < WINDUP ? Math.sin((t / WINDUP) * Math.PI * 0.5) : Math.max(0, 1 - (t - WINDUP) / (IMPACT - WINDUP) * 1.6));
 
-    return this.play({
+    const clip = this.play({
       dur,
       body: (p, t) => {
         const e = ext(t);
@@ -473,6 +491,155 @@ export class Boxer {
         const O = gi === 0 ? p.gR : p.gL;
         O.z += 0.03 * e;
         O.x += hs * 0.03 * e;
+      },
+    });
+    if (opts.fromWindup) {
+      this.release();
+      clip.t = WINDUP;
+    }
+    clip.impactIn = IMPACT - clip.t;
+    return clip;
+  }
+
+  stop(clip) {
+    if (clip) this.clips = this.clips.filter((c) => c !== clip);
+  }
+
+  // ---- turn-based fight poses -----------------------------------------------
+  /**
+   * Hold a punch's wind-up as a readable tell until punch(..., { fromWindup })
+   * or release(). `hand` is the screen side of the glove; that glove flashes.
+   */
+  windup(move, hand, { mega = false } = {}) {
+    this.release();
+    const hs = this.isPlayer ? -hand : hand;
+    const gi = hs > 0 ? 0 : 1;
+    const st = PUNCH_STYLE[move];
+    const W = new Vector3(st.windup[0] * hs, st.windup[1], st.windup[2]).multiplyScalar(TELL_WIND);
+    this.tellGlove = gi;
+    this.tellMega = mega;
+    this.tellClip = this.play({
+      dur: Infinity,
+      body: (p, t) => {
+        const k = easeOut(clamp01(t / 0.16));
+        p.twist += hs * 0.12 * k;
+        p.crouch += ((move === UPPER ? 0.1 : 0.02) + (move === BODY ? 0.07 : 0) + (mega ? 0.12 : 0)) * k;
+        if (move === UPPER) p.lean -= 0.06 * k;
+        if (move === BODY) p.lean += 0.08 * k;
+        if (mega) p.x += Math.sin(t * 70) * 0.014; // trembling with power
+      },
+      hands: (p, t) => {
+        const k = easeOut(clamp01(t / 0.16));
+        (gi === 0 ? p.gL : p.gR).addScaledVector(W, k);
+      },
+    });
+    return this.tellClip;
+  }
+
+  release() {
+    this.stop(this.tellClip);
+    this.tellClip = null;
+    if (this.tellGlove != null && !this.isPlayer) this.toon[`glove${this.tellGlove}`].emissive.setScalar(0);
+    this.tellGlove = null;
+  }
+
+  /**
+   * Hold a guard stance: 'base' | 'high' | 'low' | 'left' | 'right' | 'open' | 'block'.
+   * left/right are screen sides: the gloves shell up on that side.
+   */
+  setGuard(kind) {
+    if (GUARD_POSE[kind]) kind = GUARD_POSE[kind];
+    let sx = 0;
+    if (kind === 'left' || kind === 'right') {
+      sx = kind === 'left' ? -1 : 1;
+      kind = 'side';
+    }
+    this.stance = kind;
+    this.stanceSide = this.isPlayer ? -sx : sx;
+  }
+
+  #stanceTargets() {
+    const D = this.D;
+    const [L, R] = this._st;
+    switch (this.stance) {
+      case 'high':
+        L.set(0.075, D.headY - 0.02, 0.2);
+        R.set(-0.075, D.headY - 0.02, 0.2);
+        break;
+      case 'low':
+        L.set(0.1, D.shoulderY * 0.42, 0.25);
+        R.set(-0.1, D.shoulderY * 0.48, 0.25);
+        break;
+      case 'side': {
+        const s = this.stanceSide;
+        const near = s > 0 ? L : R;
+        const far = s > 0 ? R : L;
+        near.set(s * 0.13, D.headY - 0.03, 0.17);
+        far.set(s * 0.08, D.shoulderY * 0.45, 0.25);
+        break;
+      }
+      case 'open':
+        L.set(0.25, D.shoulderY * 0.15, 0.1);
+        R.set(-0.25, D.shoulderY * 0.2, 0.08);
+        break;
+      case 'block':
+        L.set(0.06, D.shoulderY + 0.12, 0.22);
+        R.set(-0.06, D.shoulderY + 0.07, 0.22);
+        break;
+      default:
+        L.copy(this.arms[0].guard);
+        R.copy(this.arms[1].guard);
+    }
+    return this._st;
+  }
+
+  /** Commit a defensive read: 'L' | 'R' (slip toward that screen side), 'DUCK', 'BLOCK'. Held until relax(). */
+  defend(action) {
+    this.relax(true);
+    const sx = action === 'L' ? -1 : action === 'R' ? 1 : 0;
+    const lx = this.isPlayer ? -sx : sx;
+    if (action === 'BLOCK') this.setGuard('block');
+    const apply = (p, k) => {
+      if (sx) {
+        p.x += lx * 0.36 * k;
+        p.roll -= lx * 0.3 * k;
+        p.hy += lx * 0.15 * k;
+        p.crouch += 0.07 * k;
+      } else if (action === 'DUCK') {
+        p.crouch += 0.36 * k;
+        p.lean += 0.38 * k;
+        p.hp += 0.15 * k;
+      } else {
+        p.crouch += 0.06 * k;
+        p.lean += 0.14 * k;
+        p.hp += 0.1 * k;
+      }
+    };
+    this.defClip = this.play({ dur: Infinity, apply, body: (p, t) => apply(p, easeOut(clamp01(t / 0.08))) });
+    return this.defClip;
+  }
+
+  /** Ease back out of a held defensive pose. */
+  relax(instant = false) {
+    const c = this.defClip;
+    if (!c) return;
+    this.stop(c);
+    this.defClip = null;
+    if (this.stance === 'block') this.setGuard('base');
+    if (!instant) this.play({ dur: 0.2, body: (p, t) => c.apply(p, 1 - easeOut(clamp01(t / 0.2))) });
+  }
+
+  /** Over-commit after a whiffed punch: off balance and wide open. */
+  stumble(fromSide = 0) {
+    const s = this.isPlayer ? -fromSide : fromSide;
+    return this.play({
+      dur: 0.6,
+      body: (p, t) => {
+        const r = Math.sin(clamp01(t / 0.6) * Math.PI);
+        p.lean += 0.32 * r;
+        p.z += 0.08 * r;
+        p.roll -= s * 0.18 * r;
+        p.hp += 0.2 * r;
       },
     });
   }
@@ -610,6 +777,16 @@ export class Boxer {
       c.t += dt;
       c.body?.(p, Math.min(c.t, c.dur));
     }
+    if (this.stance === 'open') {
+      // dazed: wobbling, chin up, gloves down
+      p.hr += 0.16 * Math.sin(tt * 6);
+      p.hp -= 0.12;
+      p.lean -= 0.08;
+      p.x += 0.05 * Math.sin(tt * 4.5);
+    } else if (this.stance === 'low') {
+      p.lean += 0.07;
+      p.crouch += 0.03;
+    }
 
     this.rig.position.set(p.x, p.y, p.z);
     this.rig.rotation.x = p.fall;
@@ -621,8 +798,12 @@ export class Boxer {
     this.torso.updateMatrix();
     _m.multiplyMatrices(this.hips.matrix, this.torso.matrix); // torso -> rig
     const [aL, aR] = this.arms;
-    p.gL.copy(aL.guard).applyMatrix4(_m);
-    p.gR.copy(aR.guard).applyMatrix4(_m);
+    const [sL, sR] = this.#stanceTargets();
+    const ks = 1 - Math.exp(-18 * dt);
+    this.gs[0].lerp(sL, ks);
+    this.gs[1].lerp(sR, ks);
+    p.gL.copy(this.gs[0]).applyMatrix4(_m);
+    p.gR.copy(this.gs[1]).applyMatrix4(_m);
     const gb = 0.012 * (1 - bounce);
     p.gL.y -= gb; p.gR.y -= gb;
 
@@ -641,6 +822,13 @@ export class Boxer {
       if (this.isPlayer) this.lineMat.color.copy(this.lineCol).lerp(FLASH_WHITE, k);
       else for (const m of Object.values(this.toon)) m.emissive.setScalar(k * 0.85);
       if (this.flash === 0) this.flash = -1;
+    }
+    // tell: the glove about to fire blinks hot (gold for the mega uppercut)
+    if (this.tellGlove != null && !this.isPlayer) {
+      const on = Math.floor(time * 14) % 2 === 0;
+      const m = this.toon[`glove${this.tellGlove}`].emissive;
+      if (this.tellMega) m.setRGB(on ? 1 : 0.4, on ? 0.8 : 0.3, 0);
+      else m.setRGB(on ? 0.9 : 0.15, on ? 0.75 : 0.1, on ? 0.6 : 0.05);
     }
   }
 
