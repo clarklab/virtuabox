@@ -495,6 +495,48 @@ export class Sound {
     o.stop(t + 0.45);
   }
 
+  /** Square/triangle note sequence: [[midi, delaySec], ...]. */
+  #blip(notes, { type = 'square', peak = 0.07, decay = 0.07, slide = 1 } = {}) {
+    const ctx = this.ctx;
+    for (const [n, dt] of notes) {
+      const t = this.now + dt;
+      const o = ctx.createOscillator();
+      o.type = type;
+      const f = mtof(n);
+      o.frequency.setValueAtTime(f, t);
+      if (slide !== 1) o.frequency.exponentialRampToValueAtTime(f * slide, t + decay);
+      const g = ctx.createGain();
+      this.#env(g, t, 0.002, peak, decay);
+      o.connect(g).connect(this.sfx);
+      o.start(t);
+      o.stop(t + decay + 0.05);
+    }
+  }
+
+  /** Menu and booklet sounds. */
+  ui(kind) {
+    if (!this.ctx) return;
+    switch (kind) {
+      case 'move': return this.#blip([[84, 0]], { peak: 0.05, decay: 0.04 });
+      case 'ok': return this.#blip([[79, 0], [86, 0.05], [91, 0.1]], { peak: 0.07, decay: 0.08 });
+      case 'back': return this.#blip([[86, 0], [79, 0.05]], { peak: 0.06, decay: 0.07 });
+      case 'open': return this.#blip([[72, 0], [76, 0.03], [79, 0.06]], { type: 'triangle', peak: 0.12, decay: 0.06 });
+      case 'type': return this.#blip([[96 + Math.floor(Math.random() * 3), 0]], { peak: 0.02, decay: 0.02 });
+      case 'count': return this.#blip([[100, 0]], { peak: 0.025, decay: 0.025 });
+      case 'tile': return this.#blip([[88, 0]], { type: 'triangle', peak: 0.12, decay: 0.08, slide: 0.5 });
+      case 'page':
+        return this.#noiseHit(this.now, { dest: this.sfx, type: 'bandpass', freq: 3200, q: 0.8, peak: 0.12, decay: 0.07, attack: 0.01 });
+      case 'stamp':
+        this.#noiseHit(this.now, { dest: this.sfx, type: 'lowpass', freq: 700, peak: 0.6, decay: 0.16 });
+        return this.#blip([[40, 0]], { type: 'triangle', peak: 0.3, decay: 0.15, slide: 0.5 });
+      case 'clear':
+        return this.#blip([[72, 0], [76, 0.08], [79, 0.16], [84, 0.24], [79, 0.36], [84, 0.44]], { peak: 0.08, decay: 0.12 });
+      case 'wipe':
+        return this.#noiseHit(this.now, { dest: this.sfx, type: 'highpass', freq: 1800, peak: 0.07, decay: 0.22, attack: 0.08 });
+      default:
+    }
+  }
+
   fanfare() {
     if (!this.ctx) return;
     [69, 73, 76, 81, 76, 81].forEach((n, i) => {

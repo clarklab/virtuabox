@@ -96,10 +96,12 @@ export const SCORE = {
   timeBonus: 50, // per second left when you win it all
 };
 
+// `stats` are the 1-5 bars on the tale-of-the-tape card.
 export const OPPONENTS = [
   {
     name: 'PIXEL PETE', short: 'PETE', title: 'THE ROOKIE',
     bio: 'Slow, honest tells. Loves the JAB.', tip: 'DUCK THE JAB',
+    from: 'BIT CITY', record: '8-21', stats: { speed: 1, power: 2, tricks: 1 },
     color: '#f048b0', hp: 80, hit: 11,
     tell: 1.3, window: 1.6, feint: 0, double: 0, guardSwitch: 0, mega: 0, counterGuard: 0,
     guards: ['high', 'low'],
@@ -110,6 +112,7 @@ export const OPPONENTS = [
   {
     name: 'NOVA KID', short: 'NOVA', title: 'THE SPEEDSTER',
     bio: 'Fast hands, double-ups, sneaky feints.', tip: "DON'T READ TOO EARLY",
+    from: 'NEON BAY', record: '19-4', stats: { speed: 4, power: 3, tricks: 3 },
     color: '#30b8f8', hp: 125, hit: 17,
     tell: 1.05, window: 1.3, feint: 0.18, double: 0.25, guardSwitch: 0, mega: 0, counterGuard: 0.2,
     guards: ['high', 'low', 'left', 'right'],
@@ -120,6 +123,7 @@ export const OPPONENTS = [
   {
     name: 'MEGAVOLT', short: 'VOLT', title: 'THE CHAMP',
     bio: 'Feints, shifting guards and the MEGA UPPERCUT.', tip: 'SLIP THE MEGA, NEVER DUCK IT',
+    from: 'VOLTAGE PEAK', record: '38-0', stats: { speed: 5, power: 5, tricks: 5 },
     color: '#f8a800', hp: 145, hit: 20,
     tell: 0.95, window: 1.15, feint: 0.3, double: 0.3, guardSwitch: 0.45, mega: 0.25, counterGuard: 0.55,
     guards: ['high', 'low', 'left', 'right'],
@@ -128,6 +132,17 @@ export const OPPONENTS = [
     look: { skin: '#e09868', trunks: '#f8a800', gloves: '#e82818', hair: '#f8e030', boots: '#f0f0f0' },
   },
 ];
+
+// The training-gym sparring partner: slow tells, focus mitts, pulls his punches.
+export const COACH = {
+  name: 'COACH POPS', short: 'POPS', title: 'HEAD TRAINER',
+  color: '#f8d830', hp: 9999, hit: 4,
+  tell: 1.45, window: 2.4, feint: 0, double: 0, guardSwitch: 0, mega: 0, counterGuard: 0,
+  guards: ['high', 'low', 'left', 'right'],
+  attacks: { jab: 1, hookL: 1, hookR: 1, body: 1 },
+  hair: 'flattop', bulk: 1.08, tall: 0.96,
+  look: { skin: '#c07848', trunks: '#3048d8', gloves: '#f8d830', hair: '#e0e0e8', boots: '#202020' },
+};
 
 export const RANKS = [
   [28000, 'UNDISPUTED LEGEND'],

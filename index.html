@@ -46,7 +46,7 @@
     </defs>
   </svg>
 
-  <div id="app" class="is-title">
+  <div id="app" class="is-title" data-scene="title">
     <!-- TOP SCREEN: the ring -->
     <section id="arena" aria-label="Ring">
       <div id="hud">
@@ -65,12 +65,52 @@
       </div>
       <div id="targets" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div id="tell" aria-hidden="true"><b>!</b><small></small></div>
-      <div id="combo" aria-live="polite"></div>
+      <div id="combo" aria-live="polite"><b></b><small>HIT COMBO</small></div>
       <div id="fx" aria-live="polite"></div>
+
+      <!-- top-screen layers -->
+      <div id="title" class="top-ov">
+        <div class="logo">
+          <h1 aria-label="VIRTUABOX"><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
+          <p class="tag">READ · SLIP · PUNCH · 2 MINUTES</p>
+        </div>
+      </div>
+
+      <div id="vs-top" class="top-ov" aria-hidden="true">
+        <div class="vs-ribbon">FIGHT <b id="vs-n">1</b> OF 3</div>
+        <div class="vs-plate you"><small>CHALLENGER</small><strong>YOU</strong></div>
+        <div class="vs-word">VS</div>
+        <div class="vs-plate opp"><small id="vs-title">THE ROOKIE</small><strong id="vs-name">PIXEL PETE</strong></div>
+      </div>
+
+      <div id="coach" class="top-ov">
+        <div class="cbox">
+          <img class="face" id="coach-face" alt="">
+          <div class="ctext">
+            <b class="who">COACH POPS</b>
+            <p id="coach-line"></p>
+          </div>
+          <div id="coach-pips" aria-label="Lesson progress"></div>
+        </div>
+      </div>
+
+      <div id="res-top" class="top-ov">
+        <div class="res-head" id="res-head">CHAMPION!</div>
+        <div class="res-label">FINAL SCORE</div>
+        <div id="res-score">0</div>
+        <div id="res-rank"></div>
+        <div id="res-best"></div>
+      </div>
+
+      <div id="stamps" aria-live="polite"></div>
     </section>
 
     <!-- bezel between the two "monitors" -->
-    <div id="bezel"><span id="fightno">FIGHT <b>1</b>/3</span><em id="status">SCOUTING</em><span>W.V.B.A.</span></div>
+    <div id="bezel">
+      <span id="bz-l"><span class="org">W.V.B.A.</span><span id="pips" aria-label="Circuit"></span></span>
+      <em id="status">FREE PLAY</em>
+      <span id="bz-r"><span id="hi">HI 000000</span><button id="pause" aria-label="Pause"><i></i><i></i></button></span>
+    </div>
 
     <!-- BOTTOM SCREEN: the controller -->
     <section id="deck" aria-label="Controls" data-mode="wait">
@@ -103,56 +143,109 @@
       </div>
     </section>
 
-    <!-- title -->
-    <div id="title" class="overlay show">
-      <div class="logo">
-        <h1><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
-        <p class="tag">READ · SLIP · PUNCH · 2 MINUTES</p>
+    <!-- BOTTOM SCREEN: menus, booklet, tale of the tape, results -->
+    <section id="sub" aria-live="polite">
+      <div class="view" data-view="start">
+        <div class="card-row"><small>TONIGHT'S CARD</small><div class="fs" id="card-row"></div></div>
+        <div class="press" data-mi="start"><span class="cur"></span><span class="blink">PRESS START</span></div>
+        <div class="records" id="records"></div>
+        <p class="legal">© 2026 W.V.B.A. · ALL BOUTS SANCTIONED</p>
       </div>
-      <div class="howto">
-        <ol>
-          <li><b class="r">THEIR TURN</b> A glove flashes <b class="y">!</b> Read it: <b>SLIP</b> away from hooks, <b>DUCK</b> jabs, <b>BLOCK</b> body blows.</li>
-          <li><b class="g">YOUR TURN</b> Punch the open targets, not the gloves. Keep landing to chain combos.</li>
-          <li>Perfect reads earn <svg class="ico"><use href="#star"/></svg> for a <b>SUPER</b> uppercut. KO all three in <b>2:00</b>.</li>
-        </ol>
-        <p class="keys">KEYS: ARROWS DEFEND · Q W A S PUNCH · SPACE SUPER</p>
-        <button id="start" class="cta"><span class="blink">PRESS START</span></button>
-        <div class="row-mini">
-          <span id="best"></span>
-          <span class="copy">© 2026 W.V.B.A.</span>
-          <button id="mute" class="ghost" aria-pressed="false">SOUND: ON</button>
-        </div>
-      </div>
-    </div>
 
-    <!-- versus card -->
-    <div id="vs" class="overlay">
-      <div class="card">
-        <div class="fightbadge">FIGHT <b id="vs-n">#1</b></div>
-        <div class="versus">
-          <div class="side you"><small>CHALLENGER</small><strong>YOU</strong></div>
-          <div class="vs-word">VS.</div>
-          <div class="side opp"><small id="vs-title">THE ROOKIE</small><strong id="vs-name">PIXEL PETE</strong></div>
+      <div class="view" data-view="menu">
+        <div class="win">
+          <h2 class="win-h">MAIN MENU</h2>
+          <ul class="menu" id="main-menu">
+            <li data-mi="fight"><span class="cur"></span><b>FIGHT!</b><small>3 BOUTS · 2:00 ON THE CLOCK</small></li>
+            <li data-mi="gym"><span class="cur"></span><b>TRAINING GYM</b><small>LEARN EVERY MOVE, ONE BY ONE</small><em class="badge" id="gym-badge">NEW!</em></li>
+            <li data-mi="sound"><span class="cur"></span><b id="sound-label">SOUND: ON</b><small>MUSIC, SFX AND ANNOUNCER</small></li>
+          </ul>
         </div>
-        <p id="vs-bio">Loves the JAB.</p>
-        <p class="intel">TELLS <b id="vs-speed">SLOW</b> · TIP: <b id="vs-tip">DUCK THE JAB</b></p>
       </div>
-    </div>
 
-    <!-- results -->
-    <div id="results" class="overlay">
-      <div class="res">
-        <div id="res-head">CHAMPION!</div>
-        <div class="res-label">SCORE</div>
-        <div id="res-score">0</div>
-        <div id="res-rank"></div>
-        <div class="res-stats" id="res-stats"></div>
-        <div class="res-grid" id="res-grid"></div>
-        <div class="res-actions">
-          <button id="share" class="cta">SHARE SCORE</button>
-          <button id="again" class="cta alt">REMATCH</button>
+      <div class="view" data-view="book">
+        <div class="win book">
+          <h2 class="win-h">POPS GYM <span>INSTRUCTION BOOKLET</span></h2>
+          <p class="book-intro" id="book-intro">PICK A LESSON, CHAMP. WE GO MOVE BY MOVE.</p>
+          <ol class="lessons" id="lessons"></ol>
+          <div class="btns">
+            <button class="cta sm" data-mi="next" id="book-go"><span class="cur"></span>START</button>
+            <button class="cta sm alt" data-mi="exit"><span class="cur"></span>EXIT</button>
+          </div>
         </div>
-        <div id="res-best"></div>
+      </div>
+
+      <div class="view" data-view="lesson">
+        <div class="win page">
+          <h2 class="win-h"><span id="ls-no">LESSON 1</span><b id="ls-name">SLIP</b><span id="ls-page">P.1</span></h2>
+          <div class="diagram" id="ls-diagram"></div>
+          <p class="say" id="ls-say"></p>
+          <p class="how" id="ls-how"></p>
+          <div class="btns">
+            <button class="cta sm" data-mi="try"><span class="cur"></span>TRY IT</button>
+            <button class="cta sm alt" data-mi="book"><span class="cur"></span>BOOKLET</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" data-view="grad">
+        <div class="win page">
+          <h2 class="win-h solo"><b>GRADUATION</b></h2>
+          <div class="grad">
+            <img class="face lg" id="grad-face" alt="">
+            <p class="say" id="grad-say">YOU'VE GOT EVERY MOVE IN THE BOOK. NOW GO TAKE THAT BELT.</p>
+          </div>
+          <div class="btns">
+            <button class="cta sm" data-mi="fight"><span class="cur"></span>FIGHT!</button>
+            <button class="cta sm alt" data-mi="book"><span class="cur"></span>BOOKLET</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" data-view="vs">
+        <div class="win tape">
+          <h2 class="win-h">TALE OF THE TAPE</h2>
+          <div class="tape-main">
+            <img class="face lg" id="tape-face" alt="">
+            <dl class="tape-stats">
+              <dt>FROM</dt><dd id="tape-from">BIT CITY</dd>
+              <dt>RECORD</dt><dd id="tape-record">8-21</dd>
+              <dt>SPEED</dt><dd><span class="meter" id="tape-speed"></span></dd>
+              <dt>POWER</dt><dd><span class="meter" id="tape-power"></span></dd>
+              <dt>TRICKS</dt><dd><span class="meter" id="tape-tricks"></span></dd>
+            </dl>
+          </div>
+          <p class="tip"><b>POPS SAYS</b> <span id="tape-tip">DUCK THE JAB</span></p>
+          <div class="ladder" id="ladder"></div>
+          <button class="cta sm wide" data-mi="go"><span class="cur"></span>FIGHT!</button>
+        </div>
+      </div>
+
+      <div class="view" data-view="results">
+        <div class="win res">
+          <h2 class="win-h">FIGHT REPORT</h2>
+          <div class="res-stats" id="res-stats"></div>
+          <div class="res-grid" id="res-grid"></div>
+          <p class="legend"><i class="perfect"></i>READ <i class="block"></i>BLOCK <i class="hit"></i>HIT <i class="land"></i>LAND <i class="blocked"></i>GUARD <i class="super"></i>SUPER</p>
+          <div class="btns">
+            <button class="cta sm" data-mi="share"><span class="cur"></span>SHARE</button>
+            <button class="cta sm alt" data-mi="again"><span class="cur"></span>REMATCH</button>
+            <button class="cta sm ghost" data-mi="menu"><span class="cur"></span>MENU</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- pause -->
+    <div id="paused" class="overlay">
+      <div class="win pz">
+        <h2 class="win-h">PAUSE</h2>
+        <ul class="menu" id="pause-menu">
+          <li data-mi="resume"><span class="cur"></span><b>RESUME</b></li>
+          <li data-mi="restart"><span class="cur"></span><b id="pz-restart">RESTART</b></li>
+          <li data-mi="quit"><span class="cur"></span><b id="pz-quit">QUIT TO TITLE</b></li>
+          <li data-mi="sound"><span class="cur"></span><b class="sound-label">SOUND: ON</b></li>
+        </ul>
       </div>
     </div>
 
@@ -161,11 +254,11 @@
       <div class="sharecard">
         <img id="share-img" alt="Your VIRTUABOX score card">
         <p class="hint">Long-press or save the image, then post it anywhere.</p>
-        <div class="res-actions">
-          <a id="share-dl" class="cta" download="virtuabox-score.png">SAVE IMAGE</a>
-          <button id="share-copy" class="cta alt">COPY TEXT</button>
+        <div class="btns" id="share-menu">
+          <a id="share-dl" class="cta sm" data-mi="save" download="virtuabox-score.png"><span class="cur"></span>SAVE IMAGE</a>
+          <button id="share-copy" class="cta sm alt" data-mi="copy"><span class="cur"></span>COPY TEXT</button>
+          <button id="share-close" class="cta sm ghost" data-mi="close"><span class="cur"></span>CLOSE</button>
         </div>
-        <button id="share-close" class="ghost">CLOSE</button>
       </div>
     </div>
 
@@ -177,8 +270,8 @@
       </div>
     </div>
 
-    <div id="paused" class="overlay"><div class="pz">PAUSED<small>tap to resume</small></div></div>
-    <div id="nogl" class="overlay"><div class="pz">WEBGL NEEDED<small>This browser can't run the 3D ring.</small></div></div>
+    <div id="nogl" class="overlay"><div class="win pz"><h2 class="win-h">SORRY!</h2><p class="hint">WEBGL IS NEEDED TO RUN THE 3D RING.</p></div></div>
+    <div id="wipe" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   </div>
   <noscript><p style="color:#fff;padding:2rem;font-family:sans-serif">VIRTUABOX needs JavaScript.</p></noscript>
 </body>

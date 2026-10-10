@@ -4,13 +4,14 @@ import { Boxer, IMPACT } from './boxer.js';
 import { Sound } from './audio.js';
 import * as R from './rules.js';
 import { renderCard, canvasToBlob, shareText, systemShare, HEADLINES } from './share.js';
+import { $, $$, sleep, Menu, menuKey, activeMenu, Screen2, wipe, typeText, stamp, countUp, letters, meter } from './ui.js';
+import { LESSONS, praise, readAdvice, PUNCH_ADVICE } from './lessons.js';
 
-const $ = (s) => document.querySelector(s);
-const $$ = (s) => [...document.querySelectorAll(s)];
 const app = $('#app');
 const deck = $('#deck');
 const fx = $('#fx');
 const arena = $('#arena');
+const wipeEl = $('#wipe');
 
 const sound = new Sound();
 let stage;
@@ -20,7 +21,8 @@ let opp;
 // ---------------------------------------------------------------------------
 // game state
 const G = {
-  mode: 'title', // title | intro | defend | attack | between | ko | over | og
+  scene: 'title', // title | fight | gym | results
+  mode: 'title', // title | intro | defend | attack | between | ko | over | gym | og
   clock: R.MATCH_SECONDS,
   clockOn: false,
   paused: false,
@@ -30,6 +32,7 @@ const G = {
   def: null, // the attack you're reading: { key, start, total, action, at }
   punchWait: null, // your punch window: { resolve, start, total, switchAt, switched }
   guard: 'base',
+  oppDef: R.OPPONENTS[0],
 };
 
 function resetMatch() {
@@ -38,14 +41,14 @@ function resetMatch() {
     score: 0, hp: R.PLAYER_HP, oppHp: 0, oppMax: 1, fight: 0, stars: 0,
     combo: 0, bestCombo: 0, kos: 0, landed: 0, reads: 0, perfects: 0, early: 0, supers: 0,
     recent: [], rounds: [], reason: null, highlight: 0, tutor: 0, tutorAttack: 0,
-    def: null, punchWait: null, guard: 'base',
+    def: null, punchWait: null, guard: 'base', lastRead: null,
   });
 }
 resetMatch();
 
 let gen = 0; // bumps on every new flow so stale async sequences bail out
 const gone = (ctx) => ctx.my !== gen;
-const OPP = () => R.OPPONENTS[G.fight];
+const OPP = () => G.oppDef;
 
 // timers in game time (slow-mo/hit-stop aware) and real time (pause aware)
 const gameTimers = new Set();
@@ -64,6 +67,26 @@ function tickTimers(set, dt) {
 
 const haptic = (p) => { try { navigator.vibrate?.(p); } catch { /* unsupported */ } };
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
+
+function setScene(s) {
+  G.scene = s;
+  app.dataset.scene = s;
+  if (s !== 'fight') app.classList.remove('danger');
+}
+
+// ---------------------------------------------------------------------------
+// storage
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(`virtuabox.${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(`virtuabox.${k}`, JSON.stringify(v)); } catch { /* private mode */ } },
+};
+const loadBest = () => Number(store.get('best', 0)) || 0;
+const gymDone = () => new Set(store.get('gym', []));
+function markDone(id) {
+  const d = gymDone();
+  d.add(id);
+  store.set('gym', [...d]);
+}
 
 // ---------------------------------------------------------------------------
 // HUD
@@ -93,6 +116,7 @@ let shownScore = 0;
 function updateHud() {
   setBar('p1', G.hp / R.PLAYER_HP);
   setBar('p2', G.oppHp / G.oppMax);
+  app.classList.toggle('danger', G.scene === 'fight' && G.hp > 0 && G.hp / R.PLAYER_HP <= 0.3);
 }
 
 function setStatus(text, cls = '') {
@@ -101,15 +125,26 @@ function setStatus(text, cls = '') {
   s.className = cls;
 }
 
+function renderPips() {
+  $('#pips').innerHTML = R.OPPONENTS.map((o, i) => {
+    const cls = i < G.kos ? 'ko' : i === G.fight ? 'now' : '';
+    return `<i class="${cls}" style="--c:${o.color}"></i>`;
+  }).join('');
+}
+
+function setHi() {
+  $('#hi').textContent = `HI ${String(loadBest()).padStart(6, '0')}`;
+}
+
+const comboEl = $('#combo');
 function setCombo(n) {
-  const c = $('#combo');
+  comboEl.classList.toggle('on', n >= 2);
+  comboEl.classList.toggle('hot', n >= R.MAX_CHAIN);
   if (n >= 2) {
-    c.innerHTML = `x${n}<small>COMBO</small>`;
-    c.classList.remove('bump');
-    void c.offsetWidth;
-    c.classList.add('bump');
-  } else {
-    c.innerHTML = '';
+    comboEl.querySelector('b').textContent = n;
+    comboEl.classList.remove('bump');
+    void comboEl.offsetWidth;
+    comboEl.classList.add('bump');
   }
 }
 
@@ -117,6 +152,7 @@ function popup(text, cls = '', life = 1000) {
   const d = document.createElement('div');
   d.className = `pop ${cls}`;
   d.textContent = text;
+  d.style.setProperty('--len', Math.max(5, text.length));
   fx.appendChild(d);
   setTimeout(() => d.remove(), life + 700);
   return d;
@@ -143,6 +179,7 @@ function quake() {
 // ---------------------------------------------------------------------------
 // deck: whose turn it is, stars, and which controls are live
 const turnEl = $('#turn');
+const starsEl = $('#stars');
 const starEls = $$('#stars i');
 const superBtn = $('#super');
 const padBtns = $$('.pb');
@@ -152,6 +189,7 @@ function setTurn(kind, title, sub = '') {
   turnEl.className = kind;
   turnEl.querySelector('b').textContent = title;
   turnEl.querySelector('small').textContent = sub;
+  app.dataset.turn = ['their', 'your', 'counter'].includes(kind) ? kind : '';
 }
 
 /** 'def' lights the D-pad, 'off' lights the punch pad, 'wait' dims both. */
@@ -159,6 +197,7 @@ function setControls(mode) {
   deck.dataset.mode = mode;
   dpadBtns.forEach((b) => b.classList.remove('on', 'hint'));
   superBtn.classList.toggle('ready', mode === 'off' && G.stars > 0);
+  if (mode === 'wait') app.dataset.turn = '';
 }
 
 function setStars(n, gained = false) {
@@ -167,6 +206,7 @@ function setStars(n, gained = false) {
     el.classList.toggle('on', i < G.stars);
     el.classList.toggle('pop', gained && i === G.stars - 1);
   });
+  starsEl.classList.toggle('full', G.stars === R.MAX_STARS);
   $('#super-n').textContent = G.stars ? `x${G.stars}` : '';
   superBtn.classList.toggle('ready', G.mode === 'attack' && G.stars > 0);
 }
@@ -212,7 +252,7 @@ function hideTell() {
   tellEl.className = '';
 }
 
-/** Training wheels for the first reads: name the answer and light its button. */
+/** Training wheels: name the answer and light its button. */
 function hintTell(key) {
   const a = R.ATTACKS[key];
   tellEl.querySelector('small').textContent = a.hint;
@@ -257,7 +297,7 @@ function updateOverlays() {
 // input: D-pad defends, punch pad attacks; or swipe / tap right on the ring
 function onDefend(action) {
   const d = G.def;
-  if (G.mode !== 'defend' || !d || d.action || !d.total) return;
+  if (G.mode !== 'defend' || !d || d.action || !d.total || G.paused) return;
   d.action = action;
   d.at = (G.gameTime - d.start) / d.total;
   player.defend(action);
@@ -269,7 +309,7 @@ function onDefend(action) {
 }
 
 function onPunch(q) {
-  if (G.mode !== 'attack' || !G.punchWait) return;
+  if (G.mode !== 'attack' || !G.punchWait || G.paused) return;
   pressFx(padBtns.find((b) => Number(b.dataset.q) === q));
   const w = G.punchWait;
   G.punchWait = null;
@@ -277,7 +317,7 @@ function onPunch(q) {
 }
 
 function onSuper() {
-  if (G.mode !== 'attack' || !G.punchWait || G.stars < 1) return;
+  if (G.mode !== 'attack' || !G.punchWait || G.stars < 1 || G.paused) return;
   pressFx(superBtn);
   const w = G.punchWait;
   G.punchWait = null;
@@ -300,6 +340,14 @@ superBtn.addEventListener('pointerdown', (e) => {
 // swipe to slip / duck / block, tap a target to punch it, flick up for the super
 let ptr = null;
 arena.addEventListener('pointerdown', (e) => {
+  if (G.scene === 'title' && screen2.next === 'start') {
+    pressStart();
+    return;
+  }
+  if (G.mode === 'intro') {
+    skipIntro?.();
+    return;
+  }
   if (G.mode === 'defend' || G.mode === 'attack') {
     ptr = { x: e.clientX, y: e.clientY };
     e.preventDefault();
@@ -331,9 +379,13 @@ arena.addEventListener('pointerup', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if ((G.mode === 'title' || G.mode === 'over') && k === 'enter') {
+  if ((k === 'escape' || k === 'p') && !G.paused && canPause() && !activeMenu()) {
     e.preventDefault();
-    startGame();
+    pause();
+    return;
+  }
+  if (menuKey(e)) {
+    e.preventDefault();
     return;
   }
   const def = Object.entries(R.DEFENSES).find(([, d]) => d.keys.includes(k));
@@ -353,14 +405,15 @@ window.addEventListener('keydown', (e) => {
 
 // ---------------------------------------------------------------------------
 // the fight
-function makeOpponent(i) {
-  const o = R.OPPONENTS[i];
+function makeOpponent(def) {
+  const o = typeof def === 'number' ? R.OPPONENTS[def] : def;
   opp?.dispose();
   opp = new Boxer({ color: o.color, look: o.look, bulk: o.bulk, tall: o.tall, hair: o.hair, belt: o.belt });
   opp.root.position.set(0, 0, OPP_Z);
   stage.scene.add(opp.root);
   document.documentElement.style.setProperty('--opp', o.color);
   $('#opp-name').textContent = o.name;
+  G.oppDef = o;
   return o;
 }
 
@@ -396,25 +449,37 @@ async function defendTurn(ctx) {
   return res;
 }
 
+/**
+ * One attack. ctx.demo = the boxers play themselves (title / booklet demos);
+ * ctx.show = a demo that still draws tells and call-outs; ctx.train = a gym
+ * drill (ctx.hint names the answer).
+ */
 async function defendOne(atk, second, ctx) {
   const o = OPP();
+  const live = !ctx.demo;
+  const vis = live || ctx.show;
   const total = R.tellTime(o, ctx.demo ? 1 : G.oppHp / G.oppMax, second);
   const head = player.headWorld(new THREE.Vector3());
   const chest = player.chestWorld(new THREE.Vector3());
   G.def = { key: atk.key, start: G.gameTime, total, action: null, at: 0 };
-  if (!ctx.demo) dpadBtns.forEach((b) => b.classList.remove('on', 'hint'));
+  if (live) dpadBtns.forEach((b) => b.classList.remove('on', 'hint'));
   G.recent.push(atk.key);
   if (G.recent.length > 6) G.recent.shift();
-  if (!ctx.demo) {
+  const hint = ctx.train ? ctx.hint || atk.hint : ctx.show || (live && G.fight === 0 && G.tutor < 3);
+  if (vis) {
     showTell(atk.feintFrom || atk.key);
     sound.tell(R.ATTACKS[atk.key].mega);
-    if (G.fight === 0 && G.tutor < 3 && !atk.feintFrom) hintTell(atk.key);
+    if (hint && !atk.feintFrom) hintTell(atk.key);
   } else {
     opp.windup(R.ATTACKS[atk.feintFrom || atk.key].move, R.attackHand(atk.feintFrom || atk.key));
-    // demo boxer reads it right most of the time
-    wait(total * (0.5 + Math.random() * 0.3)).then(() => {
+  }
+  if (!live) {
+    // the demo boxer reads it (always right in booklet demos)
+    const acc = ctx.acc ?? 0.85;
+    const at = ctx.show ? 0.64 + Math.random() * 0.12 : 0.5 + Math.random() * 0.3;
+    wait(total * at).then(() => {
       if (G.def && !G.def.action && !gone(ctx)) {
-        G.def.action = Math.random() < 0.85 ? answerFor(atk.key) : rand(Object.keys(R.DEFENSES));
+        G.def.action = Math.random() < acc ? answerFor(atk.key) : rand(Object.keys(R.DEFENSES));
         player.defend(G.def.action);
       }
     });
@@ -424,10 +489,11 @@ async function defendOne(atk, second, ctx) {
     await wait(total * atk.feintAt);
     if (gone(ctx)) return null;
     // the switch: a second, different tell. Early readers get caught.
-    if (!ctx.demo) {
+    if (vis) {
       showTell(atk.key, true);
       sound.tell(false, true);
       popup('FEINT!', 'sm trade', 600);
+      if (ctx.show || (ctx.train && hint)) hintTell(atk.key);
     } else {
       opp.windup(R.ATTACKS[atk.key].move, R.attackHand(atk.key));
     }
@@ -443,11 +509,12 @@ async function defendOne(atk, second, ctx) {
   const res = R.readAttack(atk.key, action);
   const A = R.ATTACKS[atk.key];
   const hand = R.attackHand(atk.key);
-  if (!ctx.demo) {
-    hideTell();
+  if (vis) hideTell();
+  if (live) {
     G.reads++;
     if (action && d.at < 0.45) G.early++;
     if (G.fight === 0 && res === 'perfect') G.tutor++;
+    G.lastRead = { key: atk.key, action, at: d.at, res, feint: !!atk.feintFrom, feintAt: atk.feintAt };
   }
 
   // the strike: aimed where you were, at your guard, or straight through
@@ -475,12 +542,12 @@ async function defendOne(atk, second, ctx) {
       sound.whoosh();
     }
     G.hitstop = 0.08;
-    if (!ctx.demo) {
+    if (vis) popup(READ_WORDS[action], 'clash');
+    if (live) {
       G.perfects++;
       G.score += R.SCORE.read;
       setStars(G.stars + 1, true);
-      popup(READ_WORDS[action], 'clash');
-      if (G.stars === R.MAX_STARS) setTimeout(() => popup('SUPER READY!', 'sm gold', 900), 250);
+      if (G.stars === R.MAX_STARS && !ctx.train) setTimeout(() => popup('SUPER READY!', 'sm gold', 900), 250);
       haptic(15);
       sound.cheer(0.4);
     }
@@ -490,7 +557,7 @@ async function defendOne(atk, second, ctx) {
     stage.clash(pos);
     sound.clash();
     G.hitstop = 0.06;
-    if (!ctx.demo) {
+    if (live) {
       G.hp = Math.max(0, G.hp - chip);
       G.score += R.SCORE.block;
       floatNum(`-${chip}`, pos, 'trade');
@@ -499,15 +566,15 @@ async function defendOne(atk, second, ctx) {
     }
   } else {
     const dmg = Math.round(o.hit * A.dmg);
-    const ko = !ctx.demo && G.hp - dmg <= 0;
+    const ko = live && !ctx.train && G.hp - dmg <= 0;
     const power = ko ? 3 : A.mega ? 2.2 : 1.1;
     player.relax(true);
     player.react(A.move, Math.min(1.9, power), hand);
     stage.impact(pos, o.color, power);
     sound.hit(power, !A.high);
     G.hitstop = ko ? 0.14 : 0.07;
-    if (!ctx.demo) {
-      G.hp = Math.max(0, G.hp - dmg);
+    if (live) {
+      G.hp = Math.max(ctx.train ? 1 : 0, G.hp - dmg);
       G.combo = 0;
       setCombo(0);
       floatNum(`-${dmg}`, pos, 'lose');
@@ -520,7 +587,7 @@ async function defendOne(atk, second, ctx) {
       haptic([30, 20, 40]);
     }
   }
-  if (!ctx.demo) updateHud();
+  if (live) updateHud();
   await wait(0.2);
   player.relax();
   G.def = null;
@@ -530,12 +597,14 @@ async function defendOne(atk, second, ctx) {
 /** YOUR TURN: punch the openings, chain until a glove stops you. */
 async function attackTurn(defRes, ctx) {
   const o = OPP();
+  const live = !ctx.demo;
+  const vis = live || ctx.show;
   const open = defRes === 'perfect';
   const stunned = defRes === 'hit';
   const log = [];
-  if (!ctx.demo) {
+  if (live) {
     G.mode = 'attack';
-    if (open) setTurn('counter', 'COUNTER!', 'WIDE OPEN — UNLOAD');
+    if (open) setTurn('counter', 'COUNTER!', 'WIDE OPEN: UNLOAD!');
     else setTurn('your', 'YOUR TURN', G.tutorAttack < 2 ? 'HIT AN OPEN TARGET' : stunned ? 'TIGHT GUARD: ONE OPENING' : 'FIND THE OPENING');
     setControls('off');
     stage.shot('fight', { rate: 3, dolly: 0.2, lift: 0.38 });
@@ -549,16 +618,14 @@ async function attackTurn(defRes, ctx) {
     guard = open ? 'open' : R.pickGuard(o, guard, lastQ, Math.random, stunned && i === 0);
     G.guard = guard;
     opp.setGuard(guard);
-    if (!ctx.demo) {
-      showTargets(guard);
-      renderPad(guard);
-    }
+    if (vis) showTargets(guard);
+    if (live) renderPad(guard);
     const total = o.window * Math.pow(0.85, i) * (stunned ? 0.75 : 1) * (open && i === 0 ? 1.2 : 1);
     const switchAt = !open && !guard.startsWith('tight') && Math.random() < o.guardSwitch ? 0.45 + Math.random() * 0.15 : null;
-    const choice = ctx.demo ? await botPunch(total) : await waitPunch(total, switchAt);
+    const choice = live ? await waitPunch(total, switchAt) : await botPunch(total, ctx);
     if (gone(ctx)) return log;
     if (choice === 'timeout') {
-      if (!ctx.demo && G.clock > 0) popup('TOO SLOW', 'sm lose', 600);
+      if (live && G.clock > 0) popup('TOO SLOW', 'sm lose', 600);
       break;
     }
     if (choice === 'super') {
@@ -580,7 +647,7 @@ async function attackTurn(defRes, ctx) {
       sound.clash();
       G.hitstop = 0.05;
       log.push('blocked');
-      if (!ctx.demo) {
+      if (live) {
         G.combo = 0;
         setCombo(0);
         popup('BLOCKED!', 'sm');
@@ -595,14 +662,15 @@ async function attackTurn(defRes, ctx) {
     chain++;
     log.push('land');
     const dmg = Math.round(R.PUNCH_DMG * R.chainMult(i) * (open ? R.COUNTER_MULT : 1));
-    const ko = !ctx.demo && G.oppHp - dmg <= 0;
+    const ko = live && G.oppHp - dmg <= 0;
     const power = ko ? 3 : 0.8 + i * 0.3 + (open ? 0.3 : 0);
     const pos = player.gloveWorld(-Q.hand, new THREE.Vector3());
     opp.react(Q.move, Math.min(1.9, 0.85 + i * 0.25), -Q.hand);
     stage.impact(pos, '#58f858', power);
     sound.hit(power, !Q.high);
     G.hitstop = ko ? 0.14 : 0.05 + i * 0.02;
-    if (!ctx.demo) {
+    if (vis && !ko) popup(i === 0 ? (open ? 'COUNTER!' : Q.high ? 'POW!' : 'BAM!') : ['', 'DOUBLE!', 'TRIPLE!', 'FLURRY!'][i], i >= 2 ? 'gold' : '');
+    if (live) {
       G.oppHp = Math.max(0, G.oppHp - dmg);
       G.landed++;
       G.combo++;
@@ -611,8 +679,7 @@ async function attackTurn(defRes, ctx) {
       G.score += R.SCORE.punch * (i + 1) * (open ? R.SCORE.counter : 1);
       setCombo(G.combo);
       floatNum(`-${dmg}`, pos);
-      if (!ko) popup(i === 0 ? (open ? 'COUNTER!' : Q.high ? 'POW!' : 'BAM!') : ['', 'DOUBLE!', 'TRIPLE!', 'FLURRY!'][i], i >= 2 ? 'gold' : '');
-      if (G.highlight < power) {
+      if (G.highlight < power && !ctx.train) {
         G.highlight = power;
         stage.capture();
       }
@@ -624,16 +691,14 @@ async function attackTurn(defRes, ctx) {
     lastQ = q;
     await wait(0.1);
   }
-  if (!ctx.demo && chain === R.MAX_CHAIN && G.oppHp > 0) {
+  if (live && chain === R.MAX_CHAIN && G.oppHp > 0) {
     G.score += R.SCORE.flurry;
-    popup(`FLURRY +${R.SCORE.flurry}`, 'sm gold');
+    setTimeout(() => popup(`FLURRY +${R.SCORE.flurry}`, 'sm gold'), 420);
     sound.voice('combo');
   }
   opp.setGuard('base');
-  if (!ctx.demo) {
-    showTargets(null);
-    renderPad(null);
-  }
+  if (vis) showTargets(null);
+  if (live) renderPad(null);
   return log;
 }
 
@@ -649,11 +714,15 @@ function waitPunch(total, switchAt) {
   });
 }
 
-/** Demo boxer on the title screen: mostly finds the opening. */
-async function botPunch(total) {
-  await wait(total * (0.3 + Math.random() * 0.3));
+/** The demo boxer: mostly finds the opening. */
+async function botPunch(total, ctx) {
+  await wait(total * (ctx.show ? 0.35 : 0.3 + Math.random() * 0.3));
+  if (ctx.botSuper) {
+    ctx.botSuper = false;
+    return 'super';
+  }
   const open = [0, 1, 2, 3].filter((q) => !R.GUARDS[G.guard].includes(q));
-  return open.length && Math.random() < 0.88 ? rand(open) : rand([0, 1, 2, 3]);
+  return open.length && Math.random() < (ctx.acc ?? 0.88) ? rand(open) : rand([0, 1, 2, 3]);
 }
 
 /** Champions shift their guard mid-window: re-read it. */
@@ -670,10 +739,11 @@ function switchGuard() {
 }
 
 async function superPunch(ctx) {
-  const n = G.stars;
-  setStars(0);
+  const live = !ctx.demo;
+  const n = live ? G.stars : R.MAX_STARS;
+  if (live) setStars(0);
   opp.setGuard('open');
-  if (!ctx.demo) {
+  if (live || ctx.show) {
     popup('SUPER!', 'xl gold', 900);
     sound.riser();
   }
@@ -691,12 +761,14 @@ async function superPunch(ctx) {
   G.hitstop = 0.16;
   quake();
   haptic([50, 30, 50]);
-  if (!ctx.demo) {
+  if (live) {
     G.supers++;
     G.oppHp = Math.max(0, G.oppHp - dmg);
     G.score += R.SCORE.super * n;
-    G.highlight = 50;
-    stage.capture();
+    if (!ctx.train) {
+      G.highlight = 50;
+      stage.capture();
+    }
     floatNum(`-${dmg}`, pos);
     updateHud();
   }
@@ -732,6 +804,7 @@ async function knockout(victim, my) {
   setControls('wait');
   hideTell();
   showTargets(null);
+  app.classList.remove('danger');
   G.timeScale = 0.28;
   sound.slowmo(true);
   victim.knockout();
@@ -752,6 +825,29 @@ async function knockout(victim, my) {
   sound.slowmo(false);
 }
 
+// ---------------------------------------------------------------------------
+// pre-fight: VS plates over the ring, tale of the tape on the bottom screen
+let skipIntro = null;
+
+function fillTape(i) {
+  const o = R.OPPONENTS[i];
+  $('#vs-n').textContent = i + 1;
+  $('#vs-name').textContent = o.name;
+  $('#vs-title').textContent = o.title;
+  setFace($('#tape-face'), faces.opp[i]);
+  $('#tape-from').textContent = o.from;
+  $('#tape-record').textContent = o.record;
+  meter($('#tape-speed'), o.stats.speed);
+  meter($('#tape-power'), o.stats.power);
+  meter($('#tape-tricks'), o.stats.tricks);
+  $('#tape-tip').textContent = o.tip;
+  $('#ladder').innerHTML = R.OPPONENTS.map((p, k) => {
+    const cls = k < i ? 'ko' : k === i ? 'now' : 'next';
+    const img = faces.opp[k] ? `<img class="face" src="${faces.opp[k]}" alt="">` : '<span class="face"></span>';
+    return `${k ? '<span class="sep"></span>' : ''}<span class="rung ${cls}">${img}${k === i ? 'NEXT' : k < i ? p.short : '???'}</span>`;
+  }).join('');
+}
+
 async function introFight(i, my) {
   G.mode = 'intro';
   setControls('wait');
@@ -762,29 +858,29 @@ async function introFight(i, my) {
   G.recent = [];
   setCombo(0);
   updateHud();
-  $('#fightno b').textContent = i + 1;
-  setStatus(`FIGHT ${i + 1} OF 3`);
+  renderPips();
+  setStatus(`BOUT ${i + 1} · ${o.short}`);
   setTurn('idle', 'GET READY', o.tip);
 
   player.clear();
   opp.dropIn(6);
   stage.shot('intro', { focus: new THREE.Vector3(0, 1.62 * o.tall, OPP_Z), rate: 6, snap: i === 0 });
   sound.riser();
+  fillTape(i);
+  showTop('vs');
+  screen2.show('vs', { menu: vsMenu });
+  const skipped = new Promise((res) => { skipIntro = res; });
   await wait(0.45);
+  if (my !== gen) return;
   stage.impact(new THREE.Vector3(0, 0.05, OPP_Z), '#f0f0f0', 1.4);
   sound.slam();
-  sound.voice(['pete', 'nova', 'volt'][i], i === 0 ? 0.8 : 0.15); // let the title call finish
+  sound.voice(['pete', 'nova', 'volt'][i], 0.15);
   haptic(40);
-
-  $('#vs-n').textContent = `#${i + 1}`;
-  $('#vs-name').textContent = o.name;
-  $('#vs-title').textContent = o.title;
-  $('#vs-bio').textContent = o.bio;
-  $('#vs-tip').textContent = o.tip;
-  $('#vs-speed').textContent = o.tell >= 1.2 ? 'SLOW' : o.tell >= 0.95 ? 'FAST' : 'LIGHTNING';
-  $('#vs').classList.add('show');
-  await waitReal(i === 0 ? 2.3 : 1.9);
-  $('#vs').classList.remove('show');
+  await Promise.race([waitReal(i === 0 ? 3.4 : 2.6), skipped]);
+  skipIntro = null;
+  if (my !== gen) return;
+  showTop(null);
+  await screen2.show(null);
   if (my !== gen) return;
   stage.shot('fight', { rate: 3 });
   sound.bell(1);
@@ -794,24 +890,45 @@ async function introFight(i, my) {
   await waitReal(0.5);
 }
 
+const vsMenu = new Menu($('[data-view="vs"]'), {
+  sound,
+  onPick: () => { sound.ui('ok'); skipIntro?.(); },
+  onBack: () => skipIntro?.(),
+});
+
+// ---------------------------------------------------------------------------
+// match flow
+let busy = false; // a screen wipe is running
+
 async function startGame() {
-  if (G.mode !== 'title' && G.mode !== 'over') return;
+  if (busy) return;
+  busy = true;
   sound.init();
   const my = ++gen;
-  gameTimers.clear();
-  realTimers.clear();
-  resetMatch();
-  setStars(0);
-  G.mode = 'intro';
-  app.classList.remove('is-title');
-  ['#title', '#results', '#sharebox'].forEach((s) => $(s).classList.remove('show'));
-  player.clear();
-  player.root.position.set(0, 0, PLAYER_Z);
-  $('#score').textContent = '000000';
-  shownScore = 0;
-  setClock(G.clock);
-  sound.voice('title');
-  sound.setIntensity(1);
+  G.paused = false;
+  $('#paused').classList.remove('show');
+  await wipe(wipeEl, () => {
+    gameTimers.clear();
+    realTimers.clear();
+    resetMatch();
+    setStars(0);
+    setCombo(0);
+    setScene('fight');
+    showTop(null);
+    screen2.hideNow();
+    $('#sharebox').classList.remove('show');
+    stage.venue('arena');
+    hideTell();
+    showTargets(null);
+    player.clear();
+    player.root.position.set(0, 0, PLAYER_Z);
+    $('#score').textContent = '000000';
+    shownScore = 0;
+    setClock(G.clock);
+    sound.setIntensity(1);
+  }, sound);
+  busy = false;
+  if (my !== gen) return;
 
   const ctx = { my, demo: false };
   for (let f = 0; f < 3; f++) {
@@ -824,6 +941,7 @@ async function startGame() {
       await knockout(opp, my);
       if (my !== gen) return;
       G.kos++;
+      renderPips();
       const bonus = R.SCORE.ko * (f + 1) + G.hp * R.SCORE.hpBonus;
       G.score += bonus;
       player.victory();
@@ -834,7 +952,7 @@ async function startGame() {
       if (f < 2) {
         const heal = Math.min(R.KO_HEAL, R.PLAYER_HP - G.hp);
         G.hp += heal;
-        if (heal > 0) popup(`+${heal} HP`, 'sm');
+        if (heal > 0) popup(`+${heal} HP`, 'sm good');
         updateHud();
         await waitReal(0.5);
       }
@@ -860,6 +978,7 @@ async function endGame(reason, my) {
   setControls('wait');
   hideTell();
   showTargets(null);
+  app.classList.remove('danger');
   sound.setIntensity(0);
   if (reason === 'champ') {
     const bonus = Math.ceil(G.clock) * R.SCORE.timeBonus;
@@ -884,11 +1003,11 @@ async function endGame(reason, my) {
   await waitReal(reason === 'ko' ? 1.2 : 1.8);
   if (my !== gen) return;
   stage.shot('results', { rate: 1.5 });
-  showResults();
+  showResults(my);
 }
 
 // ---------------------------------------------------------------------------
-// results + sharing
+// results: headline + score over the ring, fight report on the bottom screen
 let shareBlob = null;
 let shareUrl = null;
 
@@ -900,57 +1019,85 @@ function stats() {
   };
 }
 
-function loadBest() {
-  try { return Number(localStorage.getItem('virtuabox.best')) || 0; } catch { return 0; }
-}
-function saveBest(v) {
-  try { localStorage.setItem('virtuabox.best', String(v)); } catch { /* private mode */ }
-}
+const resMenu = new Menu($('[data-view="results"]'), {
+  sound,
+  onPick: (id) => {
+    if (id === 'share') { sound.ui('ok'); share(); }
+    if (id === 'again') { sound.ui('ok'); startGame(); }
+    if (id === 'menu') { sound.ui('back'); toTitle(); }
+  },
+  onBack: () => { sound.ui('back'); toTitle(); },
+});
 
-async function showResults() {
+async function showResults(my) {
+  setScene('results');
+  G.mode = 'over';
   const s = stats();
   const head = $('#res-head');
   head.textContent = HEADLINES[s.reason];
-  head.className = s.reason;
-  $('#res-rank').textContent = s.rank;
-  $('#res-stats').innerHTML = [
-    ['KOs', `${s.kos}/3`], ['READS', `${s.readPct}%`], ['BEST', `x${s.bestCombo}`], ['SUPERS', s.supers],
-  ].map(([l, v]) => `<div><b>${v}</b><small>${l}</small></div>`).join('');
+  head.className = `res-head ${s.reason}`;
+  const scoreEl = $('#res-score');
+  scoreEl.textContent = '0';
+  $('#res-rank').innerHTML = '';
+  const rb = $('#res-best');
+  rb.textContent = '';
+  rb.className = '';
+  showTop('res');
+  setStatus('FIGHT REPORT');
+
+  const tiles = [['KOs', `${s.kos}/3`], ['READS', `${s.readPct}%`], ['BEST', `x${s.bestCombo}`], ['SUPERS', s.supers]];
+  $('#res-stats').innerHTML = tiles.map(([l, v]) => `<div><b>${v}</b><small>${l}</small></div>`).join('');
   $('#res-grid').innerHTML = s.rounds
     .map((r) => `<div class="rd">${r.map((x) => `<i class="${x}"></i>`).join('')}</div>`)
     .join('');
-  const best = loadBest();
-  const rb = $('#res-best');
-  if (s.score > best) {
-    saveBest(s.score);
-    rb.textContent = 'NEW PERSONAL BEST!';
-    rb.className = 'new';
-  } else {
-    rb.textContent = `BEST ${best.toLocaleString()}`;
-    rb.className = '';
-  }
-  $('#results').classList.add('show');
-
-  // count up
-  const el = $('#res-score');
-  const t0 = performance.now();
-  const dur = 900;
-  const step = (now) => {
-    const k = Math.min(1, (now - t0) / dur);
-    el.textContent = Math.round(s.score * (1 - Math.pow(1 - k, 3))).toLocaleString();
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
+  screen2.show('results', { menu: resMenu, focus: 'again' });
 
   // pre-render the share card so the share tap stays inside the user gesture
   shareBlob = null;
   const card = renderCard(s, stage.hasCapture ? stage.captureCanvas : null);
-  shareBlob = await canvasToBlob(card);
-  if (shareUrl) URL.revokeObjectURL(shareUrl);
-  shareUrl = shareBlob ? URL.createObjectURL(shareBlob) : card.toDataURL('image/png');
+  canvasToBlob(card).then((blob) => {
+    shareBlob = blob;
+    if (shareUrl) URL.revokeObjectURL(shareUrl);
+    shareUrl = blob ? URL.createObjectURL(blob) : card.toDataURL('image/png');
+  });
+
+  // staged reveal: score ticks up, rank stamps down, tiles pop in
+  const best = loadBest();
+  if (s.score > best) store.set('best', s.score);
+  await sleep(350);
+  if (my !== gen) return;
+  await countUp(scoreEl, s.score, { dur: 1100, sound });
+  if (my !== gen) return;
+  stamp($('#res-rank'), s.rank, { life: 0, sound });
+  for (const el of $$('#res-stats div')) {
+    await sleep(140);
+    if (my !== gen) return;
+    el.classList.add('in');
+    sound.ui('tile');
+  }
+  await sleep(200);
+  if (my !== gen) return;
+  if (s.score > best) {
+    rb.textContent = 'NEW RECORD!';
+    rb.className = 'new';
+    sound.ui('clear');
+  } else if (best) {
+    rb.textContent = `BEST ${best.toLocaleString()}`;
+  }
+  setHi();
 }
 
-$('#share').addEventListener('click', async () => {
+const shareMenu = new Menu($('#sharebox'), {
+  sound,
+  onPick: (id, el, viaClick) => {
+    if (id === 'save' && !viaClick) el.click();
+    if (id === 'copy') copyShareText();
+    if (id === 'close') closeShare();
+  },
+  onBack: () => closeShare(),
+});
+
+async function share() {
   const s = stats();
   const text = shareText(s);
   if (!shareBlob) {
@@ -962,43 +1109,365 @@ $('#share').addEventListener('click', async () => {
   $('#share-img').src = shareUrl;
   $('#share-dl').href = shareUrl;
   $('#sharebox').classList.add('show');
-  $('#share-copy').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      $('#share-copy').textContent = 'COPIED!';
-    } catch {
-      $('#share-copy').textContent = 'COPY FAILED';
-    }
-    setTimeout(() => { $('#share-copy').textContent = 'COPY TEXT'; }, 1500);
-  };
-});
-$('#share-close').addEventListener('click', () => $('#sharebox').classList.remove('show'));
-$('#again').addEventListener('click', () => startGame());
-$('#start').addEventListener('click', () => startGame());
+  shareMenu.activate(0);
+}
 
-const muteBtn = $('#mute');
-let muted = false;
-try { muted = localStorage.getItem('virtuabox.muted') === '1'; } catch { /* ignore */ }
+async function copyShareText() {
+  const btn = $('#share-copy');
+  try {
+    await navigator.clipboard.writeText(shareText(stats()));
+    btn.lastChild.textContent = 'COPIED!';
+    sound.ui('ok');
+  } catch {
+    btn.lastChild.textContent = 'COPY FAILED';
+    sound.buzz();
+  }
+  setTimeout(() => { btn.lastChild.textContent = 'COPY TEXT'; }, 1500);
+}
+
+function closeShare() {
+  sound.ui('back');
+  $('#sharebox').classList.remove('show');
+  resMenu.activate(resMenu.i);
+}
+
+// ---------------------------------------------------------------------------
+// title: logo over the attract demo, PRESS START, then the main menu
+const topEls = { title: $('#title'), vs: $('#vs-top'), coach: $('#coach'), res: $('#res-top') };
+function showTop(name) {
+  for (const [k, el] of Object.entries(topEls)) el.classList.toggle('show', k === name);
+}
+
+const screen2 = new Screen2($('#sub'), deck, sound);
+
+const startMenu = new Menu($('[data-view="start"]'), { sound, onPick: () => pressStart() });
+$('[data-view="start"]').addEventListener('pointerdown', () => pressStart());
+
+const mainMenu = new Menu($('[data-view="menu"]'), {
+  sound,
+  onPick: (id) => {
+    if (id === 'fight') { sound.ui('ok'); startGame(); }
+    if (id === 'gym') { sound.ui('ok'); enterGym(); }
+    if (id === 'sound') toggleMute();
+  },
+  onBack: () => {
+    sound.ui('back');
+    screen2.show('start', { menu: startMenu });
+  },
+});
+
+function renderRecords() {
+  const best = loadBest();
+  const done = gymDone().size;
+  const lines = [];
+  if (best) lines.push(`<span>HI-SCORE <b>${best.toLocaleString()}</b></span><span><b>${R.rankFor(best)}</b></span>`);
+  if (done) lines.push(`<span>GYM <b>${done}/${LESSONS.length}</b> LESSONS CLEAR</span>`);
+  $('#records').innerHTML = lines.join('');
+  $('#gym-badge').hidden = !!(best || done);
+}
+
+function pressStart() {
+  if (screen2.next !== 'start' || busy) return;
+  sound.init();
+  sound.ui('ok');
+  sound.voice('title', 0.05);
+  screen2.show('menu', { menu: mainMenu });
+}
+
+async function toTitle() {
+  if (busy) return;
+  busy = true;
+  const my = ++gen;
+  await wipe(wipeEl, () => {
+    gameTimers.clear();
+    realTimers.clear();
+    G.paused = false;
+    $('#paused').classList.remove('show');
+    $('#sharebox').classList.remove('show');
+    resetMatch();
+    setStars(0);
+    setCombo(0);
+    hideTell();
+    showTargets(null);
+    setControls('wait');
+    stage.venue('arena');
+    makeOpponent(0);
+    G.oppHp = G.oppMax = R.OPPONENTS[0].hp;
+    player.clear();
+    screen2.hideNow();
+    titleScreen(true);
+  }, sound);
+  busy = false;
+  if (my !== gen) return;
+}
+
+function titleScreen(menu = false) {
+  setScene('title');
+  G.mode = 'title';
+  showTop('title');
+  setStatus('FREE PLAY', 'blink');
+  setTurn('idle', 'GET READY', '');
+  setHi();
+  renderRecords();
+  sound.setIntensity(0);
+  screen2.show(menu ? 'menu' : 'start', { menu: menu ? mainMenu : startMenu });
+  attract();
+}
+
+// sparkles on the logo letters
+const logoLetters = [];
+setInterval(() => {
+  if (!topEls.title.classList.contains('show') || !logoLetters.length) return;
+  const l = rand(logoLetters);
+  const box = topEls.title.getBoundingClientRect();
+  const r = l.getBoundingClientRect();
+  const g = document.createElement('i');
+  g.className = 'glint';
+  g.style.left = `${r.right - box.left - 3}px`;
+  g.style.top = `${r.top - box.top + 4}px`;
+  topEls.title.appendChild(g);
+  setTimeout(() => g.remove(), 500);
+}, 1300);
+
+// ---------------------------------------------------------------------------
+// sound toggle
+let muted = !!store.get('muted', false);
 function applyMute() {
   sound.setMuted(muted);
-  muteBtn.textContent = muted ? 'SOUND: OFF' : 'SOUND: ON';
-  muteBtn.setAttribute('aria-pressed', String(muted));
+  const label = muted ? 'SOUND: OFF' : 'SOUND: ON';
+  $('#sound-label').textContent = label;
+  $$('.sound-label').forEach((el) => { el.textContent = label; });
+}
+function toggleMute() {
+  muted = !muted;
+  store.set('muted', muted);
+  applyMute();
+  sound.init();
+  sound.ui('move');
 }
 applyMute();
-muteBtn.addEventListener('click', () => {
-  muted = !muted;
-  try { localStorage.setItem('virtuabox.muted', muted ? '1' : '0'); } catch { /* ignore */ }
-  applyMute();
+
+// ---------------------------------------------------------------------------
+// pause
+const canPause = () => (G.scene === 'fight' || G.scene === 'gym') && G.mode !== 'over' && !busy;
+let menuBeforePause = null;
+
+const pauseMenu = new Menu($('#paused'), {
+  sound,
+  onPick: (id) => {
+    const gym = G.scene === 'gym';
+    if (id === 'resume') resume();
+    if (id === 'sound') toggleMute();
+    if (id === 'restart') {
+      sound.ui('ok');
+      closePause();
+      if (gym) gymBook();
+      else startGame();
+    }
+    if (id === 'quit') {
+      sound.ui('back');
+      closePause();
+      if (gym) exitGym();
+      else toTitle();
+    }
+  },
+  onBack: () => resume(),
+});
+
+function pause() {
+  if (G.paused || !canPause()) return;
+  G.paused = true;
+  menuBeforePause = activeMenu();
+  menuBeforePause?.deactivate();
+  const gym = G.scene === 'gym';
+  $('#pz-restart').textContent = gym ? 'BOOKLET' : 'RESTART';
+  $('#pz-quit').textContent = gym ? 'EXIT GYM' : 'QUIT TO TITLE';
+  $('#paused').classList.add('show');
+  pauseMenu.activate(0);
+  sound.ui('open');
+}
+
+function closePause() {
+  G.paused = false;
+  $('#paused').classList.remove('show');
+  pauseMenu.deactivate();
+}
+
+function resume() {
+  closePause();
+  sound.init();
+  sound.ui('back');
+  menuBeforePause?.activate(menuBeforePause.i);
+  menuBeforePause = null;
+}
+
+$('#pause').addEventListener('click', () => pause());
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && ['intro', 'defend', 'attack', 'between', 'ko'].includes(G.mode)) pause();
 });
 
 // ---------------------------------------------------------------------------
-// attract mode: the boxers demo the read-and-punch loop on the title screen
-async function attract() {
+// training gym: Coach Pops walks you through the booklet, move by move
+const coachLine = $('#coach-line');
+const coachSay = (text) => typeText(coachLine, text, { sound });
+
+function coachPips(n, got) {
+  $('#coach-pips').innerHTML = Array.from({ length: n }, (_, i) => `<i class="${i < got ? 'on' : ''}"></i>`).join('');
+}
+
+function nextLesson() {
+  const done = gymDone();
+  return LESSONS.findIndex((L) => !done.has(L.id));
+}
+
+function renderLessons() {
+  const done = gymDone();
+  const next = nextLesson();
+  $('#lessons').innerHTML = LESSONS.map((L, i) => `<li data-mi="l${i}" class="${done.has(L.id) ? 'done' : ''}"><span class="cur"></span><span class="n"></span><span>${L.name}</span></li>`).join('');
+  $('#book-go').lastChild.textContent = !done.size ? 'START' : next < 0 ? 'REVIEW' : 'NEXT';
+  $('#book-intro').textContent = !done.size
+    ? 'NEW HERE? WE GO MOVE BY MOVE. START WITH LESSON 1.'
+    : next < 0
+      ? "EVERY LESSON CLEAR. YOU'RE READY, CHAMP."
+      : `${done.size}/${LESSONS.length} CLEAR. NEXT UP: ${LESSONS[next].name}.`;
+}
+
+const bookMenu = new Menu($('[data-view="book"]'), {
+  sound,
+  onPick: (id) => {
+    if (id === 'exit') { sound.ui('back'); exitGym(); return; }
+    sound.ui('ok');
+    if (id === 'next') openLesson(Math.max(0, nextLesson()));
+    else openLesson(Number(id.slice(1)));
+  },
+  onBack: () => { sound.ui('back'); exitGym(); },
+});
+
+const lessonMenu = new Menu($('[data-view="lesson"]'), {
+  sound,
+  onPick: (id) => {
+    if (id === 'try') { sound.ui('ok'); runLesson(gymLesson); }
+    if (id === 'book') { sound.ui('back'); gymBook(); }
+  },
+  onBack: () => { sound.ui('back'); gymBook(); },
+});
+
+const gradMenu = new Menu($('[data-view="grad"]'), {
+  sound,
+  onPick: (id) => {
+    if (id === 'fight') { sound.ui('ok'); startGame(); }
+    if (id === 'book') { sound.ui('back'); gymBook(); }
+  },
+  onBack: () => { sound.ui('back'); gymBook(); },
+});
+
+let gymLesson = 0;
+
+async function enterGym() {
+  if (busy) return;
+  busy = true;
   const my = ++gen;
-  G.mode = 'title';
-  stage.shot('attract', { rate: 2 });
-  const ctx = { my, demo: true };
-  while (my === gen) {
+  await wipe(wipeEl, () => {
+    gameTimers.clear();
+    realTimers.clear();
+    resetMatch();
+    setStars(0);
+    setCombo(0);
+    setScene('gym');
+    showTop(null);
+    screen2.hideNow();
+    stage.venue('gym');
+    makeOpponent(R.COACH);
+    G.oppHp = G.oppMax = R.COACH.hp;
+    player.clear();
+    hideTell();
+    showTargets(null);
+    stage.shot('attract', { snap: true });
+    sound.setIntensity(1);
+  }, sound);
+  busy = false;
+  if (my !== gen) return;
+  gymBook();
+}
+
+/** Back to the booklet's contents page; the boxers spar in the background. */
+function gymBook() {
+  const my = ++gen;
+  gymReset();
+  setStatus('INSTRUCTION BOOKLET');
+  renderLessons();
+  const next = nextLesson();
+  screen2.show('book', { menu: bookMenu, focus: next >= 0 ? `l${next}` : 'next' });
+  stage.shot('attract', { rate: 1.5 });
+  demoLoop({ my, demo: true });
+}
+
+function gymReset() {
+  G.mode = 'gym';
+  G.def = null;
+  G.punchWait = null;
+  G.timeScale = 1;
+  showTop(null);
+  setControls('wait');
+  setTurn('idle', 'POPS GYM', '');
+  hideTell();
+  showTargets(null);
+  setStars(0);
+  setCombo(0);
+  player.clear();
+  opp.clear();
+  G.hp = R.PLAYER_HP;
+  G.oppHp = G.oppMax;
+}
+
+function openLesson(n) {
+  const my = ++gen;
+  gymLesson = n;
+  const L = LESSONS[n];
+  gymReset();
+  setStatus(`LESSON ${n + 1} · ${L.name}`);
+  $('#ls-no').textContent = `LESSON ${n + 1}`;
+  $('#ls-name').textContent = L.name;
+  $('#ls-page').textContent = `${n + 1}/${LESSONS.length}`;
+  $('#ls-diagram').innerHTML = L.diagram();
+  $('#ls-say').innerHTML = L.say;
+  $('#ls-how').innerHTML = L.how;
+  sound.ui('page');
+  screen2.show('lesson', { menu: lessonMenu, focus: 'try' });
+  stage.shot('fight', { rate: 3, lift: L.drill.kind === 'defend' ? 0 : 0.38, dolly: L.drill.kind === 'defend' ? 0 : 0.2 });
+  lessonDemo(L, { my, demo: true, show: true, acc: 1 });
+}
+
+/** The boxers act out the lesson above the booklet page. */
+async function lessonDemo(L, ctx) {
+  const D = L.drill;
+  let rep = 0;
+  await wait(0.6);
+  while (!gone(ctx)) {
+    if (D.kind === 'defend' || D.kind === 'counter') {
+      const plan = D.plans ? D.plans[rep % D.plans.length] : [{ key: D.pool[rep % D.pool.length] }];
+      for (let i = 0; i < plan.length; i++) {
+        if ((await defendOne(plan[i], i > 0, ctx)) === null) return;
+        await wait(0.1);
+      }
+      if (gone(ctx)) return;
+      if (D.kind === 'counter') {
+        await wait(0.15);
+        await attackTurn('perfect', ctx);
+      }
+    } else {
+      if (D.kind === 'super') ctx.botSuper = true;
+      await attackTurn('block', ctx);
+    }
+    if (gone(ctx)) return;
+    await wait(0.8);
+    rep++;
+  }
+}
+
+/** Title + booklet contents: the boxers spar on their own. */
+async function demoLoop(ctx) {
+  while (!gone(ctx)) {
     await wait(0.3);
     const d = await defendTurn(ctx);
     if (gone(ctx) || d === null) return;
@@ -1006,18 +1475,160 @@ async function attract() {
   }
 }
 
-// pause when the tab hides
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && G.mode !== 'title' && G.mode !== 'over') {
-    G.paused = true;
-    $('#paused').classList.add('show');
+async function runLesson(n) {
+  const my = ++gen;
+  const ctx = { my, demo: false, train: true };
+  const L = LESSONS[n];
+  const D = L.drill;
+  gymReset();
+  G.tutorAttack = 9; // the coach does the talking
+  await screen2.show(null);
+  if (gone(ctx)) return;
+  setFace($('#coach-face'), faces.coach);
+  showTop('coach');
+  coachPips(D.reps, 0);
+  stage.shot('fight', { rate: 3 });
+  setTurn('idle', `LESSON ${n + 1}`, L.name);
+  await coachSay(L.go);
+  await waitReal(0.5);
+
+  let got = 0;
+  let rep = 0;
+  while (got < D.reps) {
+    if (gone(ctx)) return;
+    G.hp = R.PLAYER_HP;
+    G.oppHp = G.oppMax;
+    const out = await drillRep(D, rep, ctx);
+    if (out === null || gone(ctx)) return;
+    G.mode = 'between';
+    setControls('wait');
+    setTurn('idle', `LESSON ${n + 1}`, L.name);
+    if (out.got) {
+      got = Math.min(D.reps, got + out.got);
+      coachPips(D.reps, got);
+      sound.ui('tile');
+    }
+    coachSay(out.msg);
+    rep++;
+    await wait(got >= D.reps ? 0.5 : 1.1);
   }
-});
-$('#paused').addEventListener('pointerdown', () => {
-  G.paused = false;
-  $('#paused').classList.remove('show');
-  sound.init();
-});
+  if (gone(ctx)) return;
+
+  // lesson clear
+  markDone(L.id);
+  G.mode = 'gym';
+  stamp($('#stamps'), 'LESSON CLEAR!', { cls: 'go', life: 1700, sound });
+  sound.ui('clear');
+  player.victory();
+  coachSay(rand(["THAT'S MY FIGHTER!", "NOW YOU'RE TALKING!", 'PICTURE PERFECT!']));
+  await waitReal(1.9);
+  if (gone(ctx)) return;
+  if (n + 1 < LESSONS.length) openLesson(n + 1);
+  else graduate();
+}
+
+/** One attempt at the drill. Resolves { got, msg } or null if interrupted. */
+async function drillRep(D, rep, ctx) {
+  const hint = rep < (D.hints ?? 0);
+  if (D.kind === 'defend' || D.kind === 'counter') {
+    const plan = D.plans
+      ? D.plans[rep % D.plans.length]
+      : [{ key: rand(D.pool.filter((k) => D.pool.length < 2 || k !== G.recent[G.recent.length - 1])) }];
+    G.mode = 'defend';
+    setTurn('their', 'THEIR TURN', plan.length > 1 ? 'DOUBLE ATTACK!' : 'READ THE GLOVE');
+    setControls('def');
+    stage.shot('fight', { rate: 2.5 });
+    opp.setGuard('base');
+    await wait(0.45);
+    for (let i = 0; i < plan.length; i++) {
+      const res = await defendOne(plan[i], i > 0, { ...ctx, hint });
+      if (res === null || gone(ctx)) return null;
+      if (res !== 'perfect') return { got: 0, msg: readAdvice(G.lastRead) };
+      if (i < plan.length - 1) await wait(0.1);
+    }
+    if (D.kind === 'defend') return { got: 1, msg: praise() };
+    G.mode = 'between';
+    setControls('wait');
+    await wait(0.25);
+    const log = await attackTurn('perfect', ctx);
+    if (gone(ctx)) return null;
+    const lands = log.filter((x) => x === 'land').length;
+    if (lands) return { got: 1, msg: lands >= 3 ? "NOW THAT'S A COUNTER!" : praise() };
+    return { got: 0, msg: 'I WAS WIDE OPEN! PUNCH ANYWHERE.' };
+  }
+
+  if (D.kind === 'super') setStars(R.MAX_STARS);
+  G.mode = 'between';
+  setControls('wait');
+  await wait(0.3);
+  const log = await attackTurn('block', ctx);
+  if (gone(ctx)) return null;
+  const lands = log.filter((x) => x === 'land').length;
+  const miss = log.includes('blocked') ? PUNCH_ADVICE.blocked : PUNCH_ADVICE.slow;
+  if (D.kind === 'super') {
+    return log.includes('super') ? { got: 1, msg: "BOOM! THAT'S THE SUPER." } : { got: 0, msg: 'HIT THE STAR BUTTON IN THE MIDDLE!' };
+  }
+  if (D.kind === 'combo') {
+    if (lands >= D.need) return { got: 1, msg: `${lands} IN A ROW! BEAUTIFUL.` };
+    return { got: 0, msg: lands ? `${lands} HIT${lands > 1 ? 'S' : ''}. KEEP CHASING THE OPENING!` : miss };
+  }
+  return lands ? { got: lands, msg: lands > 1 ? 'A COMBO, EVEN. SHOWING OFF!' : praise() } : { got: 0, msg: miss };
+}
+
+function graduate() {
+  ++gen;
+  gymReset();
+  setStatus('GRADUATION');
+  setFace($('#grad-face'), faces.coach);
+  screen2.show('grad', { menu: gradMenu, focus: 'fight' });
+  sound.fanfare();
+  stage.confetti(160);
+  player.victory();
+  stage.shot('results', { rate: 1.5 });
+}
+
+async function exitGym() {
+  await toTitle();
+}
+
+// ---------------------------------------------------------------------------
+// attract mode: the boxers demo the read-and-punch loop on the title screen
+function attract() {
+  const my = ++gen;
+  G.mode = 'title';
+  stage.shot('attract', { rate: 2 });
+  demoLoop({ my, demo: true });
+}
+
+// ---------------------------------------------------------------------------
+// portraits: rendered once from the 3D models through the retro pass
+const faces = { opp: [], coach: null, you: null };
+
+function setFace(img, src) {
+  if (src) img.src = src;
+}
+
+/** Gloves down so the face reads, then let the smoothed pose catch up. */
+function settle(b, guard = 'low') {
+  b.setGuard(guard);
+  for (let k = 0; k < 24; k++) b.update(0.05, k * 0.05);
+  b.root.updateMatrixWorld(true);
+}
+
+function makePortraits() {
+  const head = new THREE.Vector3();
+  R.OPPONENTS.forEach((o, i) => {
+    makeOpponent(i);
+    settle(opp);
+    faces.opp[i] = stage.portrait(opp.root, opp.headWorld(head), 1).toDataURL();
+  });
+  makeOpponent(R.COACH);
+  settle(opp);
+  faces.coach = stage.portrait(opp.root, opp.headWorld(head), 1, { bg: 0x3a2410 }).toDataURL();
+  settle(player);
+  faces.you = stage.portrait(player.root, player.headWorld(head), -1, { bg: 0x000000 }).toDataURL();
+  settle(player, 'base');
+}
 
 // ---------------------------------------------------------------------------
 // main loop
@@ -1077,7 +1688,7 @@ function frame(now) {
   shotEl.style.setProperty('--t', Math.max(0, Math.min(1, t)));
   shotEl.className = G.mode === 'defend' ? 'def' : G.mode === 'attack' ? 'off' : '';
 
-  if (shownScore !== G.score) {
+  if (shownScore !== G.score && G.scene === 'fight') {
     shownScore += Math.ceil((G.score - shownScore) * 0.2);
     if (Math.abs(G.score - shownScore) < 3) shownScore = G.score;
     $('#score').textContent = String(shownScore).padStart(6, '0');
@@ -1145,8 +1756,8 @@ async function ogPose() {
   const my = ++gen;
   G.mode = 'og';
   app.classList.add('og');
-  app.classList.remove('is-title');
-  $('#title').classList.remove('show');
+  showTop(null);
+  screen2.hideNow();
   makeOpponent(2);
   stage.shot('custom', {
     snap: true, hfov: 40,
@@ -1165,11 +1776,11 @@ async function ogPose() {
 }
 
 async function boot() {
-  const best = loadBest();
-  if (best) $('#best').textContent = `BEST ${best.toLocaleString()}`;
+  logoLetters.push(...$$('#title h1 i'));
   setClock(G.clock);
   updateHud();
   setControls('wait');
+  setHi();
   // the in-world signs are drawn with the pixel font, so let it arrive first
   await Promise.race([
     document.fonts?.load('16px "Press Start 2P"').then(() => document.fonts.ready),
@@ -1187,6 +1798,8 @@ async function boot() {
   player.root.rotation.y = Math.PI;
   player.root.scale.setScalar(PLAYER_SCALE);
   stage.scene.add(player.root);
+  makePortraits();
+  $('#card-row').innerHTML = R.OPPONENTS.map((o, i) => `<figure><img class="face" src="${faces.opp[i]}" alt="">${o.short}</figure>`).join('');
   makeOpponent(0);
   G.oppHp = G.oppMax = R.OPPONENTS[0].hp;
   sound.onBeat = (bar) => stage.beat(bar ? 1.3 : 0.8);
@@ -1195,15 +1808,19 @@ async function boot() {
     last = t;
     frame(t);
   });
-  attract();
+  titleScreen();
 
   // hooks for tools/render-assets.mjs, tests and debugging
   const q = new URLSearchParams(location.search);
   if (q.get('autostart') === '1') startGame();
+  if (q.get('gym') === '1') enterGym();
   window.__vb = {
-    G, stage, sound, startGame, ogPose, onDefend, onPunch, onSuper,
-    get player() { return player; }, get opp() { return opp; },
+    G, stage, sound, startGame, enterGym, openLesson, runLesson, gymBook, toTitle, pressStart, pause, ogPose,
+    onDefend, onPunch, onSuper, faces, LESSONS,
+    get player() { return player; }, get opp() { return opp; }, get screen() { return screen2.cur; },
   };
 }
 
+// split the logo into letters for the drop-in
+letters($('#title .b'), letters($('#title .v')));
 boot();

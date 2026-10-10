@@ -31,6 +31,13 @@ Every exchange is two turns, each a single decision with instant payoff.
 
 KO all three fighters before the **2:00** clock runs out.
 
+New to it? Pick **TRAINING GYM** from the main menu. Coach Pops walks you
+through the instruction booklet one move per page (slip, duck, block, read it,
+punch, combo, counter, super, dirty tricks). Each page has a move table and a
+live demo in the ring above it. Press **TRY IT** to drill that move with the
+real controls until you pass. Progress is saved, and clearing every lesson
+earns a graduation page that sends you straight into the fight.
+
 | Fighter | Tells | Tricks |
 | --- | --- | --- |
 | PIXEL PETE | slow, honest | loves the jab; hints teach the reads |
@@ -43,7 +50,8 @@ reading too early.
 Controls: the D-pad defends, the colored pad punches. You can also play on
 the ring itself: swipe left/right/down/up to slip/duck/block, tap where you
 want to punch, flick up for the super. Keyboard: arrows to defend, `Q` `W`
-`A` `S` to punch, `Space` for the super, `Enter` to start.
+`A` `S` to punch, `Space` for the super, `Esc`/`P` to pause. Every menu works
+with arrows + `Enter` (`Esc` backs out) as well as taps.
 
 When the match ends you get a score card PNG (with a frame captured from your
 knockout, and a grid of every read and punch) to share through the native
@@ -61,6 +69,31 @@ share sheet, or to save/copy on desktop.
 - The UI uses Press Start 2P, SNES menu windows, and Super Famicom colored face
   buttons for the punch pad.
 
+## Screens and UI
+
+It's laid out like a dual-screen handheld. The top screen is always the 3D
+ring, and the bottom screen swaps between the controller and menu windows:
+
+- **Title**: the logo letters drop in over an attract-mode demo, then PRESS
+  START (with tonight's card) opens the main menu: FIGHT!, TRAINING GYM, SOUND.
+- **Tale of the tape**: before each bout, VS plates slide in over the ring.
+  The bottom screen shows the opponent's portrait, hometown, record,
+  SPEED/POWER/TRICKS meters, a coach's tip and the circuit ladder. Tap to skip.
+- **Fight**: the controller takes over. The ring is framed red on their turn,
+  green on yours and flashing yellow on a counter. The screen edges pulse red
+  when you're low. The strip between the screens shows the circuit pips and a
+  pause button.
+- **Fight report**: the headline and score count up over the ring and your
+  rank is stamped on. The bottom screen pops in the stat tiles and a
+  read/punch log with a legend, plus SHARE / REMATCH / MENU.
+- **Pause**: RESUME, RESTART (or BOOKLET in the gym), QUIT, SOUND.
+
+All of it shares one window style, one button style and one glove cursor.
+Every transition is stepped like sprite animation: windows grow open from a
+line, screens change behind a twelve-bar wipe, and dialog types out without
+reflowing. Fighter portraits are rendered from the actual 3D models through
+the same palette and dither pass, so the menu art always matches the ring.
+
 ## Run it
 
 It's a static site with no build step. Serve the folder with any web server:
@@ -75,12 +108,14 @@ Then open http://localhost:8080 (on a phone, use your machine's LAN IP).
 ## Layout
 
 ```
-index.html              page shell, HUD, deck, overlays, meta/OG tags
-styles.css              mobile-first layout (portrait split, landscape side-by-side)
-js/main.js              game flow: their turn / your turn loop, input, tells + targets, HUD, results
+index.html              page shell: ring, HUD, controller deck, bottom-screen views, overlays, meta/OG tags
+styles.css              mobile-first layout (portrait split, landscape side-by-side), UI kit, stepped animations
+js/main.js              game flow: title/menus, bouts, their turn / your turn loop, training gym, results, pause
+js/ui.js                UI kit: menus + glove cursor, bottom-screen views, wipes, typewriter, stamps, count-ups
+js/lessons.js           training gym booklet: one lesson per move, diagrams, drills, coach feedback
 js/rules.js             attacks, reads, guards, damage/score constants, opponent AI
 js/boxer.js             procedural boxers (toon + ink outline, or green ghost wireframe), 2-bone IK, tells, guards, slips, punches, KOs
-js/stage.js             three.js arena at ~232 rows, 16-bit palette + ordered-dither pass, pixel FX, camera shots
+js/stage.js             three.js arena + training gym at ~232 rows, 16-bit palette + ordered-dither pass, pixel FX, camera shots, 3D portraits
 js/audio.js             ElevenLabs samples + WebAudio synth fallback
 js/share.js             1080×1352 pixel-art share card + share text
 js/vendor/three.js      tree-shaken three.js r186 bundle (generated)
@@ -110,4 +145,5 @@ The `og:image` tag uses a relative path. Some link unfurlers need an absolute
 URL, so point it at the deployed `og.jpg` once the site has a home.
 
 Debug query params: `?cam=y,dist,lookY,x,hfov` tunes the fight camera,
-`?ts=0.2` slows time, `?dtcap=0.25` lets slow headless browsers keep pace.
+`?ts=0.2` slows time, `?dtcap=0.25` lets slow headless browsers keep pace,
+`?autostart=1` jumps into a match, `?gym=1` opens the training gym.

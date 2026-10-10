@@ -62,6 +62,7 @@ export class Stage {
     this.flashAmt = 0;
     this.hype = 0;
     this.pulse = 0;
+    this.venueName = 'arena';
 
     this.captureCanvas = document.createElement('canvas');
     this.captureWanted = false;
@@ -123,6 +124,7 @@ export class Stage {
     );
     sky.renderOrder = -10;
     scene.add(sky);
+    this.sky = sky;
 
     // arena floor + tiered stands
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshBasicMaterial({ color: 0x14143a }));
@@ -135,6 +137,7 @@ export class Stage {
     );
     stands.position.y = 3.1;
     scene.add(stands);
+    this.stands = stands;
 
     // ring platform: apron with the logo, mat on top
     const plat = new THREE.BoxGeometry(RING * 2 + 0.5, 0.6, RING * 2 + 0.5);
@@ -279,6 +282,84 @@ export class Stage {
     board.position.set(0, 5.9, -11.5);
     this.board = board;
     scene.add(board);
+
+    // training gym dressing: heavy bags on chains and a banner instead of the jumbotron
+    const gym = (this.gym = new THREE.Group());
+    gym.visible = false;
+    this.bags = [];
+    const bagGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.15, 12, 3);
+    const capGeo = new THREE.CylinderGeometry(0.22, 0.3, 0.12, 12);
+    capGeo.translate(0, 0.63, 0);
+    const chainMat = pixelLine('#8890a8', 1);
+    [[-5.3, -2.2, '#c82020'], [5.5, -2.8, '#2848c8'], [-4.4, -6.2, '#383848'], [4.0, -6.8, '#c82020']].forEach(([x, z, col], i) => {
+      const bag = new THREE.Group();
+      bag.position.set(x, 4.6, z);
+      const body = new THREE.Group();
+      body.position.y = -3.25;
+      body.add(new THREE.Mesh(bagGeo, toon(col)), new THREE.Mesh(bagGeo, ink));
+      body.add(new THREE.Mesh(capGeo, toon('#202028')), new THREE.Mesh(capGeo, ink));
+      const chain = new THREE.LineGeometry();
+      chain.setPositions([0, 0, 0, 0, -2.6, 0]);
+      bag.add(body, new THREE.Line2(chain, chainMat));
+      bag.userData.phase = i * 1.7;
+      this.bags.push(bag);
+      gym.add(bag);
+    });
+    const banner = new THREE.Mesh(
+      new THREE.PlaneGeometry(8, 2),
+      new THREE.MeshBasicMaterial({ map: makeGymTexture(), fog: false }),
+    );
+    banner.position.set(0, 5.4, -11.5);
+    gym.add(banner);
+    scene.add(gym);
+  }
+
+  /** 'arena' (crowd, jumbotron) or 'gym' (empty hall, heavy bags, banner). */
+  venue(name) {
+    const gym = name === 'gym';
+    this.venueName = name;
+    this.gym.visible = gym;
+    this.crowd.visible = !gym;
+    this.sky.material.uniforms.uHorizon.value.setHex(gym ? 0x30200f : 0x241a4a);
+    this.stands.material.color.setHex(gym ? 0x1a120c : 0x0c0c26);
+    this.cones.forEach((c, i) => { c.visible = !gym || i === 2; });
+  }
+
+  /**
+   * Render a head-and-shoulders portrait of `root` at `size` pixels through the
+   * same palette/dither pass as the ring, so menu art matches the 3D models.
+   * `facing` is +1 when the boxer faces +z (the opponent), -1 for the player.
+   */
+  portrait(root, head, facing = 1, { size = 48, bg = 0x101058, dist = 0.86, fov = 30 } = {}) {
+    const vis = this.scene.children.map((o) => o.visible);
+    this.scene.children.forEach((o) => { o.visible = o === root || o.isLight; });
+    const clear = this.renderer.getClearColor(new Color());
+    this.renderer.setClearColor(bg, 1);
+    const cam = this.camera;
+    const saved = { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov };
+    const flash = this.retro.uniforms.uFlashAmt.value;
+    this.retro.uniforms.uFlashAmt.value = 0;
+
+    this.renderer.setSize(size, size, false);
+    this.composer.setSize(size, size);
+    setLineResolution(size, size, 1);
+    cam.aspect = 1;
+    cam.fov = fov;
+    cam.updateProjectionMatrix();
+    cam.position.set(head.x + 0.14 * facing, head.y + 0.02, head.z + dist * facing);
+    cam.lookAt(head.x, head.y - 0.05, head.z);
+    this.composer.render();
+    const [c, g] = pixelCanvas(size, size);
+    g.drawImage(this.renderer.domElement, 0, 0);
+
+    this.scene.children.forEach((o, i) => { o.visible = vis[i]; });
+    this.renderer.setClearColor(clear, 1);
+    this.retro.uniforms.uFlashAmt.value = flash;
+    cam.position.copy(saved.pos);
+    cam.quaternion.copy(saved.quat);
+    cam.fov = saved.fov;
+    this.resize();
+    return c;
   }
 
   // ---------------------------------------------------------------------------
@@ -576,7 +657,8 @@ export class Stage {
       c.rotation.x = Math.cos(t * 0.37 + ph) * 0.14;
       c.material.uniforms.uBoost.value = 1 + this.pulse * 0.5 + this.hype * 0.6;
     }
-    this.board.visible = this.cam.shot !== 'attract'; // keep the title logo clean
+    this.board.visible = this.cam.shot !== 'attract' && this.venueName !== 'gym'; // keep the title logo clean
+    if (this.gym.visible) for (const b of this.bags) b.rotation.z = Math.sin(t * 0.9 + b.userData.phase) * 0.035;
     const chase = Math.floor(t * 8);
     this.bulbs.forEach((b, i) => b.material.color.setHex((i + chase) % 4 === 0 && this.hype > 0.3 ? 0xfff0a0 : 0xd8c890));
 
@@ -789,6 +871,24 @@ function makeBoardTexture() {
   g.font = `8px ${PIXEL_FONT}`;
   g.fillStyle = '#f0f0f0';
   g.fillText('WORLD CIRCUIT', 80, 31);
+  return pixelTexture(c);
+}
+
+function makeGymTexture() {
+  const [c, g] = pixelCanvas(160, 40);
+  g.fillStyle = '#e8e0c8';
+  g.fillRect(0, 0, 160, 40);
+  g.fillStyle = '#c82020';
+  g.fillRect(0, 0, 160, 4);
+  g.fillRect(0, 36, 160, 4);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `16px ${PIXEL_FONT}`;
+  g.fillStyle = '#181818';
+  g.fillText('POPS GYM', 80, 16);
+  g.font = `8px ${PIXEL_FONT}`;
+  g.fillStyle = '#c82020';
+  g.fillText('NO PAIN \u00b7 NO GAIN', 80, 30);
   return pixelTexture(c);
 }
 
