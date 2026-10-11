@@ -68,6 +68,16 @@ want to punch, flick up for the super. Keyboard: arrows to defend, `Q` `W`
 `A` `S` to punch, `Space` for the super, `Esc`/`P` to pause. Every menu works
 with arrows + `Enter` (`Esc` backs out) as well as taps.
 
+Menus also support `Tab` / `Shift+Tab` with a visible focus cursor. Keyboard
+labels appear on the controller when you use keys; on touch devices the pad
+stays uncluttered. Ring gestures belong to the turn in which they start, so a
+canceled swipe or a finger held through a turn change cannot fire a stray punch.
+The HUD distinguishes live time from a stopped clock, and attacks stop at zero.
+
+Choose **MOTION: REDUCED** in the main or pause menu for steadier cameras and
+reduced flashes and screen shake. The game follows your system preference until
+you choose a setting, then remembers it alongside your sound preference.
+
 When the match ends you get a score card PNG (with a frame captured from your
 knockout, and a grid of every read and punch) to share through the native
 share sheet, or to save/copy on desktop.
@@ -90,12 +100,26 @@ share sheet, or to save/copy on desktop.
 
 ## Screens and UI
 
+The world circuit visits a different venue for each opponent:
+
+| Bout | Venue | Setting |
+| --- | --- | --- |
+| Pixel Pete | Bit City Gym | A neighborhood boxing hall with warm industrial lighting |
+| Nova Kid | Neon Bay Rooftop | A rooftop ring against a neon city skyline |
+| Megavolt | Voltage Dome | A championship arena with banners and a lighting rig |
+
+The title's attract mode cycles through the circuit, highlighting the featured
+fighter in the roster. The training gym remains a separate practice venue.
+Each venue has its own canvas, ropes, signs and lighting. Static scenery is
+batched to keep draw calls low, and soft contact shadows anchor fighters to the
+mat. Intro cameras establish the venue; fight and referee cameras stay steady.
+
 It's laid out like a dual-screen handheld. The top screen is always the 3D
 ring, and the bottom screen swaps between the controller and menu windows:
 
 - **Title**: an original vector arcade crest with a raised glove, dimensional
   gold/cyan lettering and a stepped entrance sits over an attract-mode demo. PRESS
-  START (with tonight's card) opens the main menu: FIGHT!, TRAINING GYM, SOUND.
+  START (with tonight's card) opens the main menu: FIGHT!, TRAINING GYM, SOUND, MOTION.
 - **Tale of the tape**: before each bout, VS plates slide in over the ring.
   The bottom screen shows the opponent's portrait, hometown, record,
   SPEED/POWER/TRICKS meters, a coach's tip and the circuit ladder. Tap to skip.
@@ -106,7 +130,7 @@ ring, and the bottom screen swaps between the controller and menu windows:
 - **Fight report**: the headline and score count up over the ring and your
   rank is stamped on. The bottom screen pops in the stat tiles and a
   read/punch log with a legend, plus SHARE / REMATCH / MENU.
-- **Pause**: RESUME, RESTART (or BOOKLET in the gym), QUIT, SOUND.
+- **Pause**: RESUME, RESTART (or BOOKLET in the gym), QUIT, SOUND, MOTION.
 
 All of it shares one window style, one button style and one glove cursor.
 Every transition is stepped like sprite animation: windows grow open from a
@@ -136,6 +160,7 @@ js/lessons.js           training gym booklet: one lesson per move, diagrams, dri
 js/rules.js             attacks, reads, guards, damage/score constants, opponent AI
 js/boxer.js             procedural boxers (toon + ink outline, or green ghost wireframe), 2-bone IK, tells, guards, slips, punches, KOs
 js/stage.js             three.js arena + training gym at ~232 rows, 16-bit palette + ordered-dither pass, pixel FX, camera shots, 3D portraits
+js/venues.js            batched procedural venue scenery and venue palettes
 js/audio.js             ElevenLabs samples + WebAudio synth fallback
 js/share.js             1080×1352 pixel-art share card + share text
 js/vendor/three.js      tree-shaken three.js r186 bundle (generated)
@@ -149,12 +174,19 @@ tools/                  asset/bundle generators
 
 The browser checks exercise real keyboard controls and the fight loop, including
 both fighters' three knockdowns, counts, health recovery, pause/restart, lethal
-super and chip damage, and KO scoring. They require Playwright and Chromium:
+super and chip damage, and KO scoring. They also play a full-health circuit,
+verify venue changes and reject canceled gestures and punches after the bell.
+Presentation checks cover saved motion settings, keyboard navigation and menu
+fit at four phone/desktop sizes. They require Playwright and Chromium:
 
 ```sh
 npm i --no-save playwright-core
 CHROMIUM=/path/to/chrome node tools/test-fights.mjs
+CHROMIUM=/path/to/chrome node tools/test-presentation.mjs
 ```
+
+Set `SCREENSHOTS=/tmp/vb-polish` on the fight checks to save venue and referee
+frames at each size. Presentation checks save their screenshots there by default.
 
 ## Regenerating assets
 

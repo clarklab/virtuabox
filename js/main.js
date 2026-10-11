@@ -49,6 +49,7 @@ resetMatch();
 
 let gen = 0; // bumps on every new flow so stale async sequences bail out
 const gone = (ctx) => ctx.my !== gen;
+const fightExpired = (ctx) => !ctx.demo && !ctx.train && G.clock <= 0;
 const OPP = () => G.oppDef;
 
 // timers in game time (slow-mo/hit-stop aware) and real time (pause aware)
@@ -70,6 +71,7 @@ const haptic = (p) => { try { navigator.vibrate?.(p); } catch { /* unsupported *
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
 
 function setScene(s) {
+  cancelGesture();
   G.scene = s;
   app.dataset.scene = s;
   if (s !== 'fight') app.classList.remove('danger');
@@ -95,6 +97,7 @@ function markDone(id) {
 const clockEl = $('#clock');
 const clockSvg = buildSevenSeg(clockEl);
 let lastClockText = '';
+let lastClockRunning = null;
 
 function setClock(sec) {
   const s = Math.max(0, Math.ceil(sec));
@@ -102,7 +105,15 @@ function setClock(sec) {
   if (text !== lastClockText) {
     lastClockText = text;
     clockSvg.set(text);
-    clockEl.classList.toggle('hurry', s <= 10 && G.clockOn);
+    clockEl.setAttribute('aria-label', `${Math.floor(s / 60)} minutes ${s % 60} seconds left`);
+  }
+  clockEl.classList.toggle('hurry', s <= 10 && G.clockOn && !G.paused);
+  const running = G.clockOn && !G.paused;
+  if (running !== lastClockRunning) {
+    lastClockRunning = running;
+    app.dataset.clock = running ? 'live' : 'stopped';
+    const state = $('#clock-state');
+    if (state) state.textContent = running ? 'LIVE' : 'STOPPED';
   }
 }
 
@@ -112,6 +123,7 @@ function setBar(which, frac) {
   bar.querySelector('.fill').style.setProperty('--hp', v);
   bar.querySelector('.lag').style.setProperty('--hp', v);
   bar.classList.toggle('low', frac < 0.25);
+  bar.setAttribute('aria-valuenow', Math.round(Math.max(0, Math.min(1, frac)) * 100));
 }
 
 let shownScore = 0;
@@ -178,6 +190,7 @@ function floatNum(text, worldPos, cls = '') {
 }
 
 function quake() {
+  if (reducedMotion) return;
   app.classList.remove('quake');
   void app.offsetWidth;
   app.classList.add('quake');
@@ -201,10 +214,14 @@ function setTurn(kind, title, sub = '') {
 
 /** 'def' lights the D-pad, 'off' lights the punch pad, 'wait' dims both. */
 function setControls(mode) {
+  cancelGesture();
   deck.dataset.mode = mode;
   dpadBtns.forEach((b) => b.classList.remove('on', 'hint'));
   superBtn.classList.toggle('ready', mode === 'off' && G.stars > 0);
   if (mode === 'wait') app.dataset.turn = '';
+  dpadBtns.forEach((b) => b.setAttribute('aria-disabled', mode !== 'def'));
+  padBtns.forEach((b) => b.setAttribute('aria-disabled', mode !== 'off'));
+  superBtn.setAttribute('aria-disabled', mode !== 'off' || G.stars === 0);
 }
 
 function setStars(n, gained = false) {
@@ -216,6 +233,8 @@ function setStars(n, gained = false) {
   starsEl.classList.toggle('full', G.stars === R.MAX_STARS);
   $('#super-n').textContent = G.stars ? `x${G.stars}` : '';
   superBtn.classList.toggle('ready', G.mode === 'attack' && G.stars > 0);
+  superBtn.setAttribute('aria-disabled', deck.dataset.mode !== 'off' || G.stars === 0);
+  starsEl.setAttribute('aria-label', `${G.stars} of ${R.MAX_STARS} super stars`);
 }
 
 function renderPad(guard) {
@@ -223,6 +242,8 @@ function renderPad(guard) {
   padBtns.forEach((b) => {
     const q = Number(b.dataset.q);
     b.classList.toggle('guarded', covered.includes(q));
+    const Q = R.QUADS[q];
+    b.setAttribute('aria-label', `${Q.name.toLowerCase()}, ${Q.sx < 0 ? 'left' : 'right'}${guard ? covered.includes(q) ? ', guarded' : ', open' : ''} (${Q.keys[0].toUpperCase()})`);
   });
 }
 
@@ -304,7 +325,7 @@ function updateOverlays() {
 // input: D-pad defends, punch pad attacks; or swipe / tap right on the ring
 function onDefend(action) {
   const d = G.def;
-  if (G.mode !== 'defend' || !d || d.action || !d.total || G.paused) return;
+  if (G.mode !== 'defend' || !d || d.action || !d.total || G.paused || (G.scene === 'fight' && G.clock <= 0)) return;
   d.action = action;
   d.at = (G.gameTime - d.start) / d.total;
   player.defend(action);
@@ -316,7 +337,7 @@ function onDefend(action) {
 }
 
 function onPunch(q) {
-  if (G.mode !== 'attack' || !G.punchWait || G.paused) return;
+  if (G.mode !== 'attack' || !G.punchWait || G.paused || (G.scene === 'fight' && G.clock <= 0)) return;
   pressFx(padBtns.find((b) => Number(b.dataset.q) === q));
   const w = G.punchWait;
   G.punchWait = null;
@@ -324,7 +345,7 @@ function onPunch(q) {
 }
 
 function onSuper() {
-  if (G.mode !== 'attack' || !G.punchWait || G.stars < 1 || G.paused) return;
+  if (G.mode !== 'attack' || !G.punchWait || G.stars < 1 || G.paused || (G.scene === 'fight' && G.clock <= 0)) return;
   pressFx(superBtn);
   const w = G.punchWait;
   G.punchWait = null;
@@ -332,21 +353,35 @@ function onSuper() {
 }
 
 dpadBtns.forEach((b) => b.addEventListener('pointerdown', (e) => {
+  if (!e.isPrimary || e.button !== 0) return;
   e.preventDefault();
   onDefend(b.dataset.d);
 }));
 padBtns.forEach((b) => b.addEventListener('pointerdown', (e) => {
+  if (!e.isPrimary || e.button !== 0) return;
   e.preventDefault();
   onPunch(Number(b.dataset.q));
 }));
 superBtn.addEventListener('pointerdown', (e) => {
+  if (!e.isPrimary || e.button !== 0) return;
   e.preventDefault();
   onSuper();
 });
+// Native keyboard/assistive clicks don't emit pointerdown. Avoid firing twice
+// for mouse/touch clicks, which have already been handled above.
+dpadBtns.forEach((b) => b.addEventListener('click', (e) => { if (e.detail === 0) onDefend(b.dataset.d); }));
+padBtns.forEach((b) => b.addEventListener('click', (e) => { if (e.detail === 0) onPunch(Number(b.dataset.q)); }));
+superBtn.addEventListener('click', (e) => { if (e.detail === 0) onSuper(); });
 
 // swipe to slip / duck / block, tap a target to punch it, flick up for the super
 let ptr = null;
+function cancelGesture() {
+  if (ptr && arena.hasPointerCapture(ptr.id)) arena.releasePointerCapture(ptr.id);
+  ptr = null;
+}
+document.addEventListener('pointerdown', (e) => { app.dataset.input = e.pointerType === 'touch' ? 'touch' : 'mouse'; }, { passive: true });
 arena.addEventListener('pointerdown', (e) => {
+  if (G.paused || !e.isPrimary || e.button !== 0 || ptr) return;
   if (G.scene === 'title' && screen2.next === 'start') {
     pressStart();
     return;
@@ -356,16 +391,23 @@ arena.addEventListener('pointerdown', (e) => {
     return;
   }
   if (G.mode === 'defend' || G.mode === 'attack') {
-    ptr = { x: e.clientX, y: e.clientY };
+    const context = G.mode === 'defend' ? G.def : G.punchWait;
+    if (!context) return;
+    ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, mode: G.mode, context };
+    arena.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
 });
 arena.addEventListener('pointerup', (e) => {
-  if (!ptr) return;
-  const dx = e.clientX - ptr.x;
-  const dy = e.clientY - ptr.y;
-  ptr = null;
-  const swipe = Math.hypot(dx, dy) > 26;
+  if (!ptr || ptr.id !== e.pointerId) return;
+  const gesture = ptr;
+  cancelGesture();
+  const context = G.mode === 'defend' ? G.def : G.punchWait;
+  if (G.paused || gesture.mode !== G.mode || gesture.context !== context) return;
+  const dx = e.clientX - gesture.x;
+  const dy = e.clientY - gesture.y;
+  const threshold = Math.max(18, Math.min(26, arena.clientWidth * 0.06));
+  const swipe = Math.hypot(dx, dy) > threshold;
   if (G.mode === 'defend' && swipe) {
     onDefend(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'L' : 'R') : dy > 0 ? 'DUCK' : 'BLOCK');
   } else if (G.mode === 'attack') {
@@ -382,9 +424,12 @@ arena.addEventListener('pointerup', (e) => {
     onPunch((y > cy ? 2 : 0) + (x > cx ? 1 : 0));
   }
 });
+arena.addEventListener('pointercancel', (e) => { if (ptr?.id === e.pointerId) cancelGesture(); });
+arena.addEventListener('lostpointercapture', (e) => { if (ptr?.id === e.pointerId) ptr = null; });
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  app.dataset.input = 'keyboard';
   const k = e.key.toLowerCase();
   if ((k === 'escape' || k === 'p') && !G.paused && canPause() && !activeMenu()) {
     e.preventDefault();
@@ -402,6 +447,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (k === ' ') {
+    if (e.target.closest?.('#deck button')) return; // native button activation
     e.preventDefault();
     onSuper();
     return;
@@ -412,12 +458,18 @@ window.addEventListener('keydown', (e) => {
 
 // ---------------------------------------------------------------------------
 // the fight
+function setVenue(name) {
+  stage.venue(name);
+  app.dataset.venue = stage.venueName;
+}
+
 function makeOpponent(def) {
   const o = typeof def === 'number' ? R.OPPONENTS[def] : def;
   opp?.dispose();
   opp = new Boxer({ color: o.color, look: o.look, bulk: o.bulk, tall: o.tall, hair: o.hair, belt: o.belt });
   opp.root.position.set(0, 0, OPP_Z);
   stage.scene.add(opp.root);
+  stage.trackFighters(player, opp);
   document.documentElement.style.setProperty('--opp', o.color);
   $('#opp-name').textContent = o.name;
   G.oppDef = o;
@@ -449,7 +501,9 @@ async function defendTurn(ctx) {
   let res = 'hit';
   for (let i = 0; i < attacks.length; i++) {
     if (gone(ctx)) return null;
+    if (fightExpired(ctx)) return 'time';
     res = await defendOne(attacks[i], i > 0, ctx);
+    if (fightExpired(ctx)) return 'time';
     if (res === null || (!ctx.demo && G.hp <= 0)) return res;
     if (i < attacks.length - 1) await wait(0.1);
   }
@@ -510,6 +564,11 @@ async function defendOne(atk, second, ctx) {
   }
   if (gone(ctx)) return null;
 
+  if (fightExpired(ctx)) {
+    G.def = null;
+    hideTell();
+    return 'time';
+  }
   const d = G.def;
   d.total = 0; // window closed
   const action = d.action;
@@ -537,6 +596,10 @@ async function defendOne(atk, second, ctx) {
   sound.whoosh();
   await wait(clip.impactIn);
   if (gone(ctx)) return null;
+  if (fightExpired(ctx)) {
+    G.def = null;
+    return 'time';
+  }
 
   const pos = opts.target || (A.high ? player.headWorld(new THREE.Vector3()) : player.chestWorld(new THREE.Vector3()));
   if (res === 'perfect') {
@@ -603,6 +666,7 @@ async function defendOne(atk, second, ctx) {
 
 /** YOUR TURN: punch the openings, chain until a glove stops you. */
 async function attackTurn(defRes, ctx) {
+  if (fightExpired(ctx)) return [];
   const o = OPP();
   const live = !ctx.demo;
   const vis = live || ctx.show;
@@ -620,7 +684,7 @@ async function attackTurn(defRes, ctx) {
   let lastQ = null;
   let chain = 0;
   for (let i = 0; i < R.MAX_CHAIN; i++) {
-    if (gone(ctx)) return log;
+    if (gone(ctx) || fightExpired(ctx)) return log;
     // tagged last turn: they tighten up and leave one opening for your first shot
     guard = open ? 'open' : R.pickGuard(o, guard, lastQ, Math.random, stunned && i === 0);
     G.guard = guard;
@@ -630,7 +694,7 @@ async function attackTurn(defRes, ctx) {
     const total = o.window * Math.pow(0.85, i) * (stunned ? 0.75 : 1) * (open && i === 0 ? 1.2 : 1);
     const switchAt = !open && !guard.startsWith('tight') && Math.random() < o.guardSwitch ? 0.45 + Math.random() * 0.15 : null;
     const choice = live ? await waitPunch(total, switchAt) : await botPunch(total, ctx, switchAt);
-    if (gone(ctx)) return log;
+    if (gone(ctx) || fightExpired(ctx)) return log;
     if (choice === 'timeout') {
       if (live && G.clock > 0) popup('TOO SLOW', 'sm lose', 600);
       break;
@@ -648,7 +712,7 @@ async function attackTurn(defRes, ctx) {
       player.punch(Q.move, 'land', opp, null, { hand: Q.hand, target });
       sound.whoosh();
       await wait(IMPACT);
-      if (gone(ctx)) return log;
+      if (gone(ctx) || fightExpired(ctx)) return log;
       opp.recoil();
       stage.clash(target);
       sound.clash();
@@ -665,7 +729,7 @@ async function attackTurn(defRes, ctx) {
     player.punch(Q.move, 'land', opp, null, { hand: Q.hand });
     sound.whoosh();
     await wait(IMPACT);
-    if (gone(ctx)) return log;
+    if (gone(ctx) || fightExpired(ctx)) return log;
     chain++;
     log.push('land');
     const dmg = Math.round(R.PUNCH_DMG * R.chainMult(i) * (open ? R.COUNTER_MULT : 1));
@@ -777,7 +841,7 @@ async function superPunch(ctx) {
   player.charge(1);
   player.glow = 0.5;
   superFx.className = 'on';
-  stage.shot('custom', { ...SUPER_CAM.coil, rate: 6 });
+  stage.shot(reducedMotion ? 'fight' : 'custom', { ...SUPER_CAM.coil, rate: 6 });
   sound.riser();
   if (vis) popup('SUPER!', 'xl gold', 700);
   haptic(30);
@@ -790,7 +854,7 @@ async function superPunch(ctx) {
     superFx.className = `on l${k}`;
     stage.charge(glove(), k);
     sound.charge(k);
-    if (k === 2) stage.shot('custom', { ...SUPER_CAM.push, rate: 2 });
+    if (k === 2 && !reducedMotion) stage.shot('custom', { ...SUPER_CAM.push, rate: 2 });
     if (vis) popup(k === R.MAX_STARS ? 'MAX POWER!' : `POWER ${k}`, 'sm gold', 600);
     haptic(12 * k);
     await wait(step);
@@ -799,7 +863,7 @@ async function superPunch(ctx) {
 
   // release: cut low and slow everything down into the hit
   superFx.className = `on l${Math.max(1, n)}`;
-  stage.shot('custom', { ...SUPER_CAM.hit, snap: true });
+  if (!reducedMotion) stage.shot('custom', { ...SUPER_CAM.hit, snap: true });
   G.timeScale = 0.3;
   const clip = player.punch(R.UPPER, 'land', opp, null, { hand: 1, fromWindup: true, wind: SUPER_WIND });
   sound.whoosh();
@@ -860,6 +924,11 @@ async function fightLoop(ctx) {
     G.mode = 'between';
     setControls('wait');
     await wait(0.25);
+    if (gone(ctx)) return 'abort';
+    if (G.clock <= 0) {
+      G.rounds.push([d]);
+      return 'time';
+    }
     const log = await attackTurn(d, ctx);
     if (gone(ctx)) return 'abort';
     G.rounds.push([d, ...log]);
@@ -983,6 +1052,7 @@ function fillTape(i) {
   $('#vs-n').textContent = i + 1;
   $('#vs-name').textContent = o.name;
   $('#vs-title').textContent = o.title;
+  $('#venue-name').textContent = o.venueName;
   setFace($('#tape-face'), faces.opp[i]);
   $('#tape-from').textContent = o.from;
   $('#tape-record').textContent = o.record;
@@ -1005,6 +1075,7 @@ async function introFight(i, my) {
   setControls('wait');
   G.fight = i;
   const o = makeOpponent(i);
+  setVenue(o.venue);
   G.oppHp = G.oppMax = o.hp;
   G.combo = 0;
   G.recent = [];
@@ -1071,8 +1142,9 @@ async function startGame() {
     setScene('fight');
     showTop(null);
     screen2.hideNow();
+    $('#sub').inert = false;
     $('#sharebox').classList.remove('show');
-    stage.venue('arena');
+    setVenue(R.OPPONENTS[0].venue);
     hideTell();
     showTargets(null);
     player.clear();
@@ -1302,6 +1374,7 @@ const mainMenu = new Menu($('[data-view="menu"]'), {
     if (id === 'fight') { sound.ui('ok'); startGame(); }
     if (id === 'gym') { sound.ui('ok'); enterGym(); }
     if (id === 'sound') toggleMute();
+    if (id === 'motion') toggleMotion();
   },
   onBack: () => {
     sound.ui('back');
@@ -1345,11 +1418,12 @@ async function toTitle() {
     hideTell();
     showTargets(null);
     setControls('wait');
-    stage.venue('arena');
+    setVenue(R.OPPONENTS[0].venue);
     makeOpponent(0);
     G.oppHp = G.oppMax = R.OPPONENTS[0].hp;
     player.clear();
     screen2.hideNow();
+    $('#sub').inert = false;
     titleScreen(true);
   }, sound);
   busy = false;
@@ -1371,7 +1445,7 @@ function titleScreen(menu = false) {
 
 // Glints follow the illustrated logo rather than the hidden semantic heading.
 setInterval(() => {
-  if (!topEls.title.classList.contains('show') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!topEls.title.classList.contains('show') || reducedMotion) return;
   const box = topEls.title.getBoundingClientRect();
   const r = $('#title .logo-art').getBoundingClientRect();
   const g = document.createElement('i');
@@ -1400,9 +1474,34 @@ function toggleMute() {
 }
 applyMute();
 
+// Follow the OS preference until a player explicitly chooses a motion setting.
+const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+let motionPreference = store.get('motion', null);
+let reducedMotion = motionPreference === null ? motionQuery.matches : motionPreference === 'reduced';
+function applyMotion() {
+  app.dataset.motion = reducedMotion ? 'reduced' : 'full';
+  const label = reducedMotion ? 'MOTION: REDUCED' : 'MOTION: FULL';
+  $$('#motion-label, .motion-label').forEach((el) => { el.textContent = label; });
+  stage?.setMotion(reducedMotion);
+  if (reducedMotion) app.classList.remove('quake');
+}
+function toggleMotion() {
+  reducedMotion = !reducedMotion;
+  motionPreference = reducedMotion ? 'reduced' : 'full';
+  store.set('motion', motionPreference);
+  applyMotion();
+  sound.ui('move');
+}
+motionQuery.addEventListener('change', () => {
+  if (motionPreference !== null) return;
+  reducedMotion = motionQuery.matches;
+  applyMotion();
+});
+applyMotion();
+
 // ---------------------------------------------------------------------------
 // pause
-const canPause = () => (G.scene === 'fight' || G.scene === 'gym') && G.mode !== 'over' && !busy;
+const canPause = () => (G.scene === 'fight' || G.scene === 'gym') && G.mode !== 'over' && !busy && screen2.cur === screen2.next;
 let menuBeforePause = null;
 
 const pauseMenu = new Menu($('#paused'), {
@@ -1411,6 +1510,7 @@ const pauseMenu = new Menu($('#paused'), {
     const gym = G.scene === 'gym';
     if (id === 'resume') resume();
     if (id === 'sound') toggleMute();
+    if (id === 'motion') toggleMotion();
     if (id === 'restart') {
       sound.ui('ok');
       closePause();
@@ -1430,6 +1530,10 @@ const pauseMenu = new Menu($('#paused'), {
 function pause() {
   if (G.paused || !canPause()) return;
   G.paused = true;
+  cancelGesture();
+  setClock(G.clock);
+  deck.inert = true;
+  $('#sub').inert = true;
   menuBeforePause = activeMenu();
   menuBeforePause?.deactivate();
   const gym = G.scene === 'gym';
@@ -1444,6 +1548,9 @@ function closePause() {
   G.paused = false;
   $('#paused').classList.remove('show');
   pauseMenu.deactivate();
+  deck.inert = !!screen2.cur;
+  $('#sub').inert = false;
+  setClock(G.clock);
 }
 
 function resume() {
@@ -1529,7 +1636,7 @@ async function enterGym() {
     setScene('gym');
     showTop(null);
     screen2.hideNow();
-    stage.venue('gym');
+    setVenue('gym');
     makeOpponent(R.COACH);
     G.oppHp = G.oppMax = R.COACH.hp;
     player.clear();
@@ -1625,11 +1732,27 @@ async function lessonDemo(L, ctx) {
 
 /** Title + booklet contents: the boxers spar on their own. */
 async function demoLoop(ctx) {
+  let exchanges = 0;
+  let showcase = 0;
   while (!gone(ctx)) {
     await wait(0.3);
+    if (gone(ctx)) return;
     const d = await defendTurn(ctx);
     if (gone(ctx) || d === null) return;
     await attackTurn(d, ctx);
+    if (gone(ctx)) return;
+    if (ctx.circuit && ++exchanges % 3 === 0) {
+      showcase = (showcase + 1) % R.OPPONENTS.length;
+      const o = makeOpponent(showcase);
+      setVenue(o.venue);
+      G.oppHp = G.oppMax = o.hp;
+      G.recent = [];
+      player.clear();
+      opp.dropIn(1.5);
+      setStatus(o.venueName);
+      $$('#card-row figure').forEach((el, i) => el.classList.toggle('showcase', i === showcase));
+      await wait(0.6);
+    }
   }
 }
 
@@ -1756,7 +1879,9 @@ function attract() {
   const my = ++gen;
   G.mode = 'title';
   stage.shot('attract', { rate: 2 });
-  demoLoop({ my, demo: true });
+  setStatus(R.OPPONENTS[0].venueName);
+  $$('#card-row figure').forEach((el, i) => el.classList.toggle('showcase', i === 0));
+  demoLoop({ my, demo: true, circuit: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -1823,6 +1948,10 @@ function frame(now) {
       const w = G.punchWait;
       G.punchWait = null;
       w?.resolve('timeout');
+      cancelGesture();
+      hideTell();
+      showTargets(null);
+      setControls('wait');
     }
   }
   setClock(G.clock);
@@ -1946,6 +2075,7 @@ async function boot() {
   ]);
   try {
     stage = new Stage($('#arena'));
+    applyMotion();
   } catch (e) {
     console.error(e);
     $('#nogl').classList.add('show');
@@ -1959,6 +2089,7 @@ async function boot() {
   makePortraits();
   $('#card-row').innerHTML = R.OPPONENTS.map((o, i) => `<figure><img class="face" src="${faces.opp[i]}" alt="">${o.short}</figure>`).join('');
   makeOpponent(0);
+  setVenue(R.OPPONENTS[0].venue);
   G.oppHp = G.oppMax = R.OPPONENTS[0].hp;
   sound.onBeat = (bar) => stage.beat(bar ? 1.3 : 0.8);
   stage.shot('attract', { snap: true });

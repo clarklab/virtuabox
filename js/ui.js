@@ -19,7 +19,7 @@ export class Menu {
     this.sound = sound;
     this.i = 0;
     root.addEventListener('pointermove', (e) => {
-      if (e.pointerType !== 'mouse') return;
+      if (e.pointerType !== 'mouse' || active !== this) return;
       const it = e.target.closest('[data-mi]');
       const i = this.items().indexOf(it);
       if (i >= 0 && i !== this.i) this.focus(i);
@@ -30,6 +30,11 @@ export class Menu {
       if (i < 0 || active !== this) return;
       this.focus(i, true);
       this.pick(true);
+    });
+    root.addEventListener('focusin', (e) => {
+      if (active !== this) return;
+      const i = this.items().indexOf(e.target.closest('[data-mi]'));
+      if (i >= 0 && i !== this.i) this.focus(i, true);
     });
   }
 
@@ -44,6 +49,7 @@ export class Menu {
 
   deactivate() {
     if (active === this) active = null;
+    $$('[data-mi]', this.root).forEach((el) => { el.tabIndex = -1; });
   }
 
   get isActive() {
@@ -56,7 +62,12 @@ export class Menu {
     i = ((i % items.length) + items.length) % items.length;
     if (i !== this.i && !silent) this.sound?.ui('move');
     this.i = i;
-    items.forEach((el, k) => el.classList.toggle('sel', k === i));
+    items.forEach((el, k) => {
+      el.classList.toggle('sel', k === i);
+      el.tabIndex = k === i ? 0 : -1;
+      if (!el.matches('button, a')) el.setAttribute('role', 'button');
+    });
+    if (active === this && document.activeElement !== items[i]) items[i].focus({ preventScroll: true });
   }
 
   focusId(id) {
@@ -66,16 +77,17 @@ export class Menu {
 
   move(d) {
     this.focus(this.i + d);
+    this.items()[this.i]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   /** `viaClick` lets a link item keep its native click (e.g. a download). */
   pick(viaClick = false) {
     const el = this.items()[this.i];
     if (!el) return;
-    el.classList.remove('press');
+    el.classList.remove('is-pressed');
     void el.offsetWidth;
-    el.classList.add('press');
-    setTimeout(() => el.classList.remove('press'), 200);
+    el.classList.add('is-pressed');
+    setTimeout(() => el.classList.remove('is-pressed'), 200);
     this.onPick?.(el.dataset.mi, el, viaClick);
   }
 }
@@ -84,6 +96,9 @@ export class Menu {
 export function menuKey(e) {
   if (!active) return false;
   switch (e.key) {
+    case 'Tab':
+      active.move(e.shiftKey ? -1 : 1);
+      return true;
     case 'ArrowUp':
     case 'ArrowLeft':
       active.move(-1);

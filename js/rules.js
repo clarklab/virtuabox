@@ -108,6 +108,7 @@ export const SCORE = {
 export const OPPONENTS = [
   {
     name: 'PIXEL PETE', short: 'PETE', title: 'THE ROOKIE',
+    venue: 'pete', venueName: 'BIT CITY GYM',
     bio: 'Slow, honest tells. Loves the JAB.', tip: 'DUCK THE JAB',
     from: 'BIT CITY', record: '8-21', stats: { speed: 1, power: 2, tricks: 1 },
     color: '#f048b0', hp: 80, hit: 11,
@@ -119,6 +120,7 @@ export const OPPONENTS = [
   },
   {
     name: 'NOVA KID', short: 'NOVA', title: 'THE SPEEDSTER',
+    venue: 'nova', venueName: 'NEON BAY ROOFTOP',
     bio: 'Fast hands, double-ups, sneaky feints.', tip: "DON'T READ TOO EARLY",
     from: 'NEON BAY', record: '19-4', stats: { speed: 4, power: 3, tricks: 3 },
     color: '#30b8f8', hp: 125, hit: 17,
@@ -130,6 +132,7 @@ export const OPPONENTS = [
   },
   {
     name: 'MEGAVOLT', short: 'VOLT', title: 'THE CHAMP',
+    venue: 'volt', venueName: 'VOLTAGE DOME',
     bio: 'Feints, shifting guards and the MEGA UPPERCUT.', tip: 'SLIP THE MEGA, NEVER DUCK IT',
     from: 'VOLTAGE PEAK', record: '38-0', stats: { speed: 5, power: 5, tricks: 5 },
     color: '#f8a800', hp: 145, hit: 20,

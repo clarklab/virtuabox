@@ -3,10 +3,12 @@
 // npm install --no-save playwright-core
 // CHROMIUM=/path/to/chrome node tools/test-fights.mjs
 // NODE_PATH may point at an existing installation of playwright-core.
+// SCREENSHOTS=/tmp/vb-polish also saves title, referee, venues and gym frames
+// at 390x844, 320x568, 844x390 and 1280x720 for responsive visual review.
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { delimiter, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,19 +51,49 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}/?dtcap=0.25&ts=4`);
   await page.waitForFunction(() => window.__vb?.stage);
 
+  async function capture(name) {
+    if (!process.env.SCREENSHOTS) return;
+    const directory = resolve(process.env.SCREENSHOTS);
+    await mkdir(directory, { recursive: true });
+    const viewport = page.viewportSize();
+    const paused = await page.evaluate(() => {
+      const wasPaused = window.__vb.G.paused;
+      window.__vb.G.paused = true;
+      return wasPaused;
+    });
+    for (const [width, height] of [[390, 844], [320, 568], [844, 390], [1280, 720]]) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.screenshot({ path: join(directory, `${name}-${width}x${height}.png`), animations: 'disabled' });
+      const bounds = await page.evaluate(() => document.querySelector('#app').getBoundingClientRect().toJSON());
+      assert.ok(bounds.left >= -1 && bounds.right <= width + 1, `${name}: cabinet fits ${width}px width`);
+      assert.ok(bounds.top >= -1 && bounds.bottom <= height + 1, `${name}: cabinet fits ${height}px height`);
+    }
+    await page.setViewportSize(viewport);
+    await page.evaluate((paused) => { window.__vb.G.paused = paused; }, paused);
+  }
+
+  await page.waitForTimeout(400);
+  await capture('title');
+
   await page.evaluate(async () => {
     const R = await import('/js/rules.js');
     // Only HP and stars are shortened. Keyboard events enter the normal input
     // handlers; attack damage, fightLoop, countdown and match flow run unchanged.
     const state = () => {
       const g = window.__vb.G;
-      return Object.fromEntries(['scene', 'mode', 'clock', 'clockOn', 'paused', 'hp', 'oppHp', 'oppMax', 'playerDowns', 'oppDowns', 'count', 'fight', 'kos', 'score', 'reason'].map((k) => [k, g[k]]));
+      return { ...Object.fromEntries(['scene', 'mode', 'clock', 'clockOn', 'paused', 'hp', 'oppHp', 'oppMax', 'playerDowns', 'oppDowns', 'count', 'fight', 'kos', 'score', 'reason'].map((k) => [k, g[k]])), venue: window.__vb.stage.venueName };
     };
     const key = (key) => window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
-    const test = window.__fightTest = { R, state, key, frames: [], goal: null, autoDefend: true };
+    const test = window.__fightTest = { R, state, key, frames: [], goal: null, autoDefend: true, autoAttack: false, captureBouts: false, capturedBouts: [], captureReady: null };
     function frame() {
       const g = window.__vb.G;
       test.frames.push(state());
+      if (test.captureBouts && g.scene === 'fight' && g.mode === 'defend' && !test.capturedBouts.includes(g.fight)) {
+        test.capturedBouts.push(g.fight);
+        test.captureReady = g.fight;
+        g.paused = true;
+      }
       if (g.scene === 'fight' && !g.paused) {
         if (g.mode === 'defend' && g.def?.total && !g.def.action) {
           if (test.goal === 'player' || (test.goal === 'chip' && g.def.key !== 'body')) {
@@ -69,7 +101,7 @@ try {
             if (test.goal === 'chip') key('ArrowUp');
             test.goal = null;
             test.autoDefend = false;
-          } else if (test.autoDefend) {
+          } else if (test.autoDefend && (!test.autoAttack || (g.gameTime - g.def.start) / g.def.total >= 0.6)) {
             const answer = R.ATTACKS[g.def.key].answer;
             key({ L: 'ArrowLeft', R: 'ArrowRight', SLIP: 'ArrowLeft', DUCK: 'ArrowDown', BLOCK: 'ArrowUp' }[answer]);
           }
@@ -79,6 +111,9 @@ try {
           if (test.goal === 'super') { g.stars = 1; key(' '); }
           else key(R.QUADS.find((q) => !R.GUARDS[g.guard].includes(q.id)).keys[0]);
           test.goal = null;
+        } else if (g.mode === 'attack' && g.punchWait && test.autoAttack) {
+          if (g.stars === R.MAX_STARS) key(' ');
+          else key(R.QUADS.find((q) => !R.GUARDS[g.guard].includes(q.id)).keys[0]);
         }
       }
       requestAnimationFrame(frame);
@@ -91,6 +126,8 @@ try {
     await page.evaluate(() => {
       window.__fightTest.goal = null;
       window.__fightTest.autoDefend = true;
+      window.__fightTest.autoAttack = false;
+      window.__fightTest.captureBouts = false;
       void window.__vb.startGame();
     });
     await page.waitForFunction(() => window.__vb.G.scene === 'fight' && window.__vb.G.mode === 'intro');
@@ -155,12 +192,17 @@ try {
 
   await start();
   const first = await down('opponent', 1, 'super');
+  await page.waitForFunction(() => window.__vb.G.count >= 3);
+  await capture('referee');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__vb.G.paused);
   const paused = await snapshot();
   await page.keyboard.press('q');
   await page.waitForTimeout(400);
   assert.deepEqual(await snapshot(), paused, 'pause must freeze count, health, score, and clock');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.mi), 'resume', 'pause focuses its first menu item');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.mi), 'restart', 'Tab moves focus within the pause menu');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !window.__vb.G.paused);
   await checkCount(first);
@@ -207,6 +249,110 @@ try {
   assert.notEqual(restarted.mode, 'count');
   assert.notEqual(restarted.mode, 'ko');
   console.log('PASS restart: an interrupted count cannot alter the new match');
+
+  // Keep a real mouse pointer active so capture works for the synchronous
+  // cancellation probes; the events still enter the normal arena listeners.
+  await page.evaluate(() => document.addEventListener('pointerdown', (e) => { window.__testPointer = e.pointerId; }, { once: true }));
+  await page.mouse.move(5, 5);
+  await page.mouse.down();
+  await page.waitForFunction(() => {
+    const { G: g } = window.__vb;
+    if (window.__inputProbe) return true;
+    if (g.mode !== 'attack' || !g.punchWait) return false;
+    const arena = document.querySelector('#arena');
+    const r = arena.getBoundingClientRect();
+    const id = window.__testPointer;
+    const send = (type, options = {}) => arena.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: id, isPrimary: true,
+      button: 0, buttons: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, ...options,
+    }));
+    const original = g.punchWait;
+    const unchanged = (label, expected = original) => { if (g.punchWait !== expected) throw new Error(`${label} submitted an unwanted punch`); };
+    send('pointerdown'); send('pointercancel'); send('pointerup'); unchanged('Canceled gesture');
+    send('pointerdown', { isPrimary: false, pointerId: id + 1 });
+    send('pointerup', { isPrimary: false, pointerId: id + 1 }); unchanged('Secondary pointer');
+    send('pointerdown'); send('pointerup', { pointerId: id + 1 }); unchanged('Mismatched pointer'); send('pointercancel');
+    send('pointerdown'); g.mode = 'defend'; send('pointerup'); g.mode = 'attack'; unchanged('Gesture crossing a turn');
+    send('pointerdown'); const nextWindow = { ...original }; g.punchWait = nextWindow;
+    send('pointerup'); unchanged('Gesture crossing a punch window', nextWindow); g.punchWait = original;
+    for (const b of document.querySelectorAll('.dp[data-d]')) {
+      if (b.getAttribute('aria-disabled') !== 'true') throw new Error('Defense controls should be announced unavailable during attack');
+    }
+    for (const b of document.querySelectorAll('.pb')) {
+      if (b.getAttribute('aria-disabled') !== 'false') throw new Error('Punch controls should be announced available during attack');
+    }
+    const { R } = window.__fightTest;
+    const q = R.QUADS.find((q) => !R.GUARDS[g.guard].includes(q.id)).id;
+    document.querySelector(`.pb[data-q="${q}"]`).click();
+    if (g.punchWait !== null) throw new Error('A native keyboard/assistive click must submit a punch');
+    window.__inputProbe = true;
+    return true;
+  });
+  await page.mouse.up();
+  console.log('PASS input: canceled/secondary/stale gestures, accessible controls, and native button activation');
+
+  // Let the bell occur immediately after a punch is submitted, before impact.
+  await start();
+  await page.waitForFunction(() => {
+    const g = window.__vb.G;
+    if (window.__bellProbe) return true;
+    if (g.mode !== 'attack' || !g.punchWait) return false;
+    const { R, key } = window.__fightTest;
+    window.__bellProbe = { hp: g.hp, oppHp: g.oppHp, landed: g.landed, score: g.score };
+    key(R.QUADS.find((q) => !R.GUARDS[g.guard].includes(q.id)).keys[0]);
+    g.clock = 0;
+    g.clockOn = false;
+    key(' '); key('q'); key('ArrowUp');
+    return true;
+  });
+  await page.waitForFunction(() => window.__vb.G.reason === 'time');
+  const bell = await page.evaluate(() => {
+    const g = window.__vb.G;
+    return { before: window.__bellProbe, after: { hp: g.hp, oppHp: g.oppHp, landed: g.landed, score: g.score } };
+  });
+  assert.deepEqual(bell.after, bell.before, 'a pending punch and further inputs must not deal damage or award score after the bell');
+  assert.equal((await snapshot()).kos, 0);
+  console.log('PASS timeout: no late punch damage, score, or knockout after the bell');
+
+  await start();
+  const circuitIndex = await page.evaluate(() => {
+    const t = window.__fightTest;
+    t.autoAttack = true;
+    t.captureBouts = true;
+    t.capturedBouts = [];
+    return t.frames.length;
+  });
+  for (const [fight, venue] of ['pete', 'nova', 'volt'].entries()) {
+    await page.waitForFunction((i) => window.__fightTest.captureReady === i || window.__vb.G.reason !== null, fight, { timeout: 90_000 });
+    const state = await snapshot();
+    assert.equal(state.reason, null, `the circuit reaches bout ${fight + 1} before the clock expires`);
+    assert.equal(state.venue, venue, `bout ${fight + 1} has its own venue`);
+    assert.equal(state.oppHp, state.oppMax, 'the circuit uses the full opponent health pool');
+    assert.equal(state.playerDowns, 0);
+    assert.equal(state.oppDowns, 0);
+    await capture(venue);
+    await page.evaluate(() => { window.__fightTest.captureReady = null; window.__vb.G.paused = false; });
+  }
+  await page.waitForFunction(() => window.__vb.G.reason !== null, undefined, { timeout: 90_000 });
+  const champion = await snapshot();
+  assert.equal(champion.reason, 'champ', 'a perfect player can finish all three bouts within the match clock');
+  assert.equal(champion.kos, 3);
+  assert.equal(champion.playerDowns, 0);
+  assert.ok(champion.clock > 0, 'the two-minute circuit must remain winnable');
+  const circuit = await page.evaluate((i) => window.__fightTest.frames.slice(i), circuitIndex);
+  for (const fight of [0, 1, 2]) {
+    assert.deepEqual([...new Set(circuit.filter((s) => s.fight === fight && s.mode === 'count').map((s) => s.oppDowns))], [1, 2, 3], `bout ${fight + 1} needs all three knockdowns`);
+  }
+  console.log(`PASS full circuit: three real-health bouts, nine knockdowns, ${champion.clock.toFixed(1)}s remaining`);
+
+  await page.evaluate(() => { window.__fightTest.autoAttack = false; window.__fightTest.captureBouts = false; void window.__vb.enterGym(); });
+  await page.waitForFunction(() => window.__vb.G.scene === 'gym' && window.__vb.stage.venueName === 'gym');
+  await page.waitForTimeout(500);
+  await capture('gym');
+  await page.evaluate(() => { void window.__vb.toTitle(); });
+  await page.waitForFunction(() => window.__vb.G.scene === 'title');
+  assert.notEqual((await snapshot()).venue, 'gym', 'leaving the gym restores an arena');
+  console.log('PASS venues: Pete gym, Nova rooftop, Volt dome, and Coach Pops gym');
 
   assert.deepEqual(errors, [], 'no uncaught browser errors');
   console.log('All fight integration checks passed.');

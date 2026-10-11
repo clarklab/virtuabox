@@ -52,16 +52,17 @@
       <div id="hud">
         <div class="fighter p1">
           <div class="nm">YOU</div>
-          <div class="bar"><i class="lag"></i><i class="fill"></i></div>
+          <div class="bar" role="progressbar" aria-label="Your health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i class="lag"></i><i class="fill"></i></div>
           <div class="knockdowns" aria-label="0 of 3 knockdowns"><span>DOWN</span><i></i><i></i><i></i></div>
         </div>
         <div class="mid">
           <div id="clock" aria-label="Time left"></div>
+          <small id="clock-state">STOPPED</small>
           <div id="score">000000</div>
         </div>
         <div class="fighter p2">
           <div class="nm" id="opp-name">PIXEL PETE</div>
-          <div class="bar"><i class="lag"></i><i class="fill"></i></div>
+          <div class="bar" role="progressbar" aria-label="Opponent health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i class="lag"></i><i class="fill"></i></div>
           <div class="knockdowns" aria-label="0 of 3 knockdowns"><span>DOWN</span><i></i><i></i><i></i></div>
         </div>
       </div>
@@ -104,6 +105,7 @@
           <h1 aria-label="VIRTUABOX"><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
           <img class="logo-art" src="icons/virtuabox-logo.svg" width="640" height="256" alt="" aria-hidden="true" fetchpriority="high">
           <p class="tag">READ · SLIP · PUNCH · 2 MINUTES</p>
+          <p class="circuit-tag"><span></span> THE WORLD CIRCUIT <span></span></p>
         </div>
       </div>
 
@@ -145,6 +147,7 @@
 
     <!-- BOTTOM SCREEN: the controller -->
     <section id="deck" aria-label="Controls" data-mode="wait">
+      <div class="deck-brand" aria-hidden="true"><span>VIRTUAL FIGHT SYSTEM</span><b>V.B. / 16</b></div>
       <div id="turnbar">
         <div id="turn" class="idle" aria-live="polite"><b>GET READY</b><small></small></div>
         <div id="stars" aria-label="Super stars"><i></i><i></i><i></i></div>
@@ -153,32 +156,35 @@
       <div id="controls">
         <div class="side def">
           <div id="dpad" role="group" aria-label="Defend">
-            <button class="dp up" data-d="BLOCK" aria-label="Block (body blows)"><svg class="tri up"><use href="#tri"/></svg><span>BLOCK</span></button>
-            <button class="dp left" data-d="L" aria-label="Slip left (right hooks)"><svg class="tri left"><use href="#tri"/></svg><span>SLIP</span></button>
+            <button class="dp up" data-d="BLOCK" aria-label="Block body blows, up arrow"><svg class="tri up"><use href="#tri"/></svg><span>BLOCK</span><kbd class="button-key" aria-hidden="true">↑</kbd></button>
+            <button class="dp left" data-d="L" aria-label="Slip left, left arrow"><svg class="tri left"><use href="#tri"/></svg><span>SLIP</span><kbd class="button-key" aria-hidden="true">←</kbd></button>
             <span class="dp mid" aria-hidden="true"></span>
-            <button class="dp right" data-d="R" aria-label="Slip right (left hooks)"><svg class="tri right"><use href="#tri"/></svg><span>SLIP</span></button>
-            <button class="dp down" data-d="DUCK" aria-label="Duck (jabs)"><svg class="tri down"><use href="#tri"/></svg><span>DUCK</span></button>
+            <button class="dp right" data-d="R" aria-label="Slip right, right arrow"><svg class="tri right"><use href="#tri"/></svg><span>SLIP</span><kbd class="button-key" aria-hidden="true">→</kbd></button>
+            <button class="dp down" data-d="DUCK" aria-label="Duck jabs, down arrow"><svg class="tri down"><use href="#tri"/></svg><span>DUCK</span><kbd class="button-key" aria-hidden="true">↓</kbd></button>
           </div>
           <p class="cap">DEFEND</p>
         </div>
         <div class="side off">
           <div id="pad" role="group" aria-label="Punch">
-            <button class="pb ul" data-q="0" aria-label="Punch head, left"><svg class="arr m0"><use href="#arrow"/></svg><b>HEAD</b><svg class="shield"><use href="#shield"/></svg></button>
-            <button class="pb ur" data-q="1" aria-label="Punch head, right"><svg class="arr m1"><use href="#arrow"/></svg><b>HEAD</b><svg class="shield"><use href="#shield"/></svg></button>
-            <button class="pb ll" data-q="2" aria-label="Punch body, left"><svg class="arr m3"><use href="#arrow"/></svg><b>BODY</b><svg class="shield"><use href="#shield"/></svg></button>
-            <button class="pb lr" data-q="3" aria-label="Punch body, right"><svg class="arr m2"><use href="#arrow"/></svg><b>BODY</b><svg class="shield"><use href="#shield"/></svg></button>
+            <button class="pb ul" data-q="0" aria-label="Punch head left, Q"><svg class="arr m0"><use href="#arrow"/></svg><b>HEAD</b><svg class="shield"><use href="#shield"/></svg><kbd class="button-key" aria-hidden="true">Q</kbd></button>
+            <button class="pb ur" data-q="1" aria-label="Punch head right, W"><svg class="arr m1"><use href="#arrow"/></svg><b>HEAD</b><svg class="shield"><use href="#shield"/></svg><kbd class="button-key" aria-hidden="true">W</kbd></button>
+            <button class="pb ll" data-q="2" aria-label="Punch body left, A"><svg class="arr m3"><use href="#arrow"/></svg><b>BODY</b><svg class="shield"><use href="#shield"/></svg><kbd class="button-key" aria-hidden="true">A</kbd></button>
+            <button class="pb lr" data-q="3" aria-label="Punch body right, S"><svg class="arr m2"><use href="#arrow"/></svg><b>BODY</b><svg class="shield"><use href="#shield"/></svg><kbd class="button-key" aria-hidden="true">S</kbd></button>
             <button id="super" class="hub" aria-label="Super uppercut"><svg><use href="#star"/></svg><span id="super-n"></span></button>
           </div>
           <p class="cap">PUNCH</p>
         </div>
       </div>
+      <p class="control-guide">READ THE TELL. <b>DEFEND.</b><br>WHEN THE GUARD OPENS, <b>PUNCH.</b><span class="keyboard-guide">ARROWS TO DEFEND · Q W A S TO PUNCH<br>SPACE: SUPER · ESC: PAUSE</span></p>
     </section>
 
     <!-- BOTTOM SCREEN: menus, booklet, tale of the tape, results -->
     <section id="sub" aria-live="polite">
+      <div class="cabinet-label" aria-hidden="true"><span class="power-light"></span> WORLD CIRCUIT <b>16-BIT</b></div>
       <div class="view" data-view="start">
-        <div class="card-row"><small>TONIGHT'S CARD</small><div class="fs" id="card-row"></div></div>
-        <div class="press" data-mi="start"><span class="cur"></span><span class="blink">PRESS START</span></div>
+        <div class="card-row"><small>THREE FIGHTERS. ONE CHAMPION.</small><div class="fs" id="card-row"></div></div>
+        <button class="press" data-mi="start"><span class="cur"></span><span class="blink">PRESS START</span></button>
+        <p class="start-hint">TAP TO PLAY <span>·</span> ENTER TO START</p>
         <div class="records" id="records"></div>
         <p class="legal">© 2026 W.V.B.A. · ALL BOUTS SANCTIONED</p>
       </div>
@@ -186,11 +192,18 @@
       <div class="view" data-view="menu">
         <div class="win">
           <h2 class="win-h">MAIN MENU</h2>
+          <div class="match-rules" aria-label="Circuit rules">
+            <div><b>03</b><span>BOUTS</span></div>
+            <div><b>2:00</b><span>FIGHT CLOCK</span></div>
+            <div><b>03</b><span>DOWNS / BOUT</span></div>
+          </div>
           <ul class="menu" id="main-menu">
-            <li data-mi="fight"><span class="cur"></span><b>FIGHT!</b><small>3 BOUTS · 3 KNOCKDOWNS TO K.O.</small></li>
+            <li data-mi="fight"><span class="cur"></span><b>FIGHT!</b><small>TAKE ON THE WORLD CIRCUIT</small></li>
             <li data-mi="gym"><span class="cur"></span><b>TRAINING GYM</b><small>LEARN EVERY MOVE, ONE BY ONE</small><em class="badge" id="gym-badge">NEW!</em></li>
             <li data-mi="sound"><span class="cur"></span><b id="sound-label">SOUND: ON</b><small>MUSIC, SFX AND ANNOUNCER</small></li>
+            <li data-mi="motion"><span class="cur"></span><b id="motion-label" class="motion-label">MOTION: FULL</b><small>CAMERA MOVEMENT &amp; FLASHES</small></li>
           </ul>
+          <p class="rules-note">THIRD DOWN IS K.O.<br>REFEREE COUNTS PAUSE THE CLOCK.</p>
         </div>
       </div>
 
@@ -236,6 +249,7 @@
       <div class="view" data-view="vs">
         <div class="win tape">
           <h2 class="win-h">TALE OF THE TAPE</h2>
+          <p class="venue-line"><span>LIVE FROM</span><b id="venue-name">THE NEIGHBORHOOD GYM</b></p>
           <div class="tape-main">
             <img class="face lg" id="tape-face" alt="">
             <dl class="tape-stats">
@@ -265,17 +279,19 @@
           </div>
         </div>
       </div>
+      <div class="cabinet-footer" aria-hidden="true"><span>READ THE TELL</span><i></i><span>OWN THE RING</span></div>
     </section>
 
     <!-- pause -->
-    <div id="paused" class="overlay">
+    <div id="paused" class="overlay" role="dialog" aria-modal="true" aria-labelledby="pause-heading">
       <div class="win pz">
-        <h2 class="win-h">PAUSE</h2>
+        <h2 class="win-h" id="pause-heading">PAUSE</h2>
         <ul class="menu" id="pause-menu">
           <li data-mi="resume"><span class="cur"></span><b>RESUME</b></li>
           <li data-mi="restart"><span class="cur"></span><b id="pz-restart">RESTART</b></li>
           <li data-mi="quit"><span class="cur"></span><b id="pz-quit">QUIT TO TITLE</b></li>
           <li data-mi="sound"><span class="cur"></span><b class="sound-label">SOUND: ON</b></li>
+          <li data-mi="motion"><span class="cur"></span><b class="motion-label">MOTION: FULL</b></li>
         </ul>
       </div>
     </div>

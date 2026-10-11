@@ -1,5 +1,6 @@
 import * as THREE from './vendor/three.js';
 import { pixelLine, outlineMaterial, setLineResolution } from './boxer.js';
+import { buildVenues, VENUE_CONFIG } from './venues.js';
 
 const { Vector3, Color } = THREE;
 
@@ -12,10 +13,11 @@ const PIXEL_FONT = '"Press Start 2P", monospace';
 
 const _v = new Vector3();
 const _v2 = new Vector3();
+const _shadow = new Vector3();
 
 // fight camera: height, distance behind the player, look-at height, x offset, horizontal fov
-const CAM = (new URLSearchParams(location.search).get('cam') || '2.6,3.0,1.36,-0.28,25').split(',').map(Number);
-const SHOT_HFOV = { fight: CAM[4] || 30, attract: 62, intro: 44, ko: 56, results: 56 };
+const CAM = (new URLSearchParams(location.search).get('cam') || '2.2,3.3,1.4,-0.22,28').split(',').map(Number);
+const SHOT_HFOV = { fight: CAM[4] || 30, attract: 58, intro: 48, ko: 51, results: 50 };
 
 const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
 
@@ -23,6 +25,8 @@ export class Stage {
   constructor(container) {
     this.container = container;
     this.time = 0;
+    this.reducedMotion = false;
+    this.fighters = [null, null];
 
     const renderer = (this.renderer = new THREE.WebGLRenderer({
       antialias: false, powerPreference: 'high-performance', stencil: false,
@@ -38,8 +42,9 @@ export class Stage {
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.05, 250);
 
     // cel lighting for the toon-shaded fighters and ring hardware
-    this.scene.add(new THREE.HemisphereLight(0xdde4ff, 0x302838, 1.25));
-    const key = new THREE.DirectionalLight(0xffffff, 2.1);
+    this.ambient = new THREE.HemisphereLight(0xdde4ff, 0x302838, 0.95);
+    this.scene.add(this.ambient);
+    const key = (this.keyLight = new THREE.DirectionalLight(0xffffff, 1.65));
     key.position.set(1.6, 5, 3.5);
     this.scene.add(key);
 
@@ -62,13 +67,35 @@ export class Stage {
     this.flashAmt = 0;
     this.hype = 0;
     this.pulse = 0;
-    this.venueName = 'arena';
+    this.venue('pete');
 
     this.captureCanvas = document.createElement('canvas');
     this.captureWanted = false;
 
     this.resize();
     new ResizeObserver(() => this.resize()).observe(container);
+  }
+
+  /** Settings and camera effects share one reduced-motion switch. */
+  setMotion(reduced) {
+    this.reducedMotion = !!reduced;
+    if (this.reducedMotion) {
+      this.trauma = this.fovKick = this.flashAmt = this.pulse = 0;
+      this.retro.uniforms.uFlashAmt.value = 0;
+      for (const c of this.cones) c.rotation.set(0, 0, 0);
+      for (const r of this.rings) r.visible = false;
+      for (const star of this.stars) star.visible = false;
+      this.sp.life.fill(0);
+      this.sp.alpha.fill(0);
+      this.sparks.geometry.attributes.aAlpha.needsUpdate = true;
+      if (this.cam.shot === 'custom') this.shot('fight', { snap: true });
+    }
+  }
+
+  /** Called when opponents change; no scene traversal or allocation per frame. */
+  trackFighters(player, opponent) {
+    this.fighters[0] = player;
+    this.fighters[1] = opponent;
   }
 
   // ---------------------------------------------------------------------------
@@ -131,6 +158,7 @@ export class Stage {
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.62;
     scene.add(floor);
+    this.floor = floor;
     const stands = new THREE.Mesh(
       new THREE.CylinderGeometry(15.5, 7.2, 7.5, 32, 10, true),
       new THREE.MeshBasicMaterial({ color: 0x0c0c26, side: THREE.BackSide }),
@@ -149,6 +177,7 @@ export class Stage {
       new THREE.MeshBasicMaterial({ map: apron }), new THREE.MeshBasicMaterial({ map: apron }),
     ]);
     scene.add(platMesh);
+    this.apronMats = platMesh.material;
     const mat = new THREE.Mesh(
       new THREE.PlaneGeometry(RING * 2 + 0.5, RING * 2 + 0.5),
       new THREE.MeshBasicMaterial({ map: makeMatTexture(this.renderer) }),
@@ -156,6 +185,8 @@ export class Stage {
     mat.rotation.x = -Math.PI / 2;
     mat.position.y = 0.002;
     scene.add(mat);
+    this.ringCanvas = mat;
+    this.venueTextures = {};
 
     // corner posts (red/blue/white like the classics) + ropes
     const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.45, 10);
@@ -186,12 +217,14 @@ export class Stage {
     });
 
     // lighting truss with bulbs
+    const arenaRig = (this.arenaRig = new THREE.Group());
+    scene.add(arenaRig);
     const trussMat = new THREE.MeshBasicMaterial({ color: 0x3a3a58 });
     for (const [sx, sz, len, rot] of [[0, -1, 7, 0], [0, 1, 7, 0], [-1, 0, 7, 1], [1, 0, 7, 1]]) {
       const bar = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, 0.12), trussMat);
       bar.position.set(sx * 3.5, 5.2, sz * 3.5);
       bar.rotation.y = rot * Math.PI / 2;
-      scene.add(bar);
+      arenaRig.add(bar);
     }
     this.bulbs = [];
     const bulbGeo = new THREE.BoxGeometry(0.22, 0.14, 0.22);
@@ -202,7 +235,7 @@ export class Stage {
       const [x, z] = [[k, -3.5], [3.5, k], [k, 3.5], [-3.5, k]][side];
       b.position.set(x, 5.08, z);
       this.bulbs.push(b);
-      scene.add(b);
+      arenaRig.add(b);
     }
 
     // soft light shafts (the dither pass turns them into proper 16-bit beams)
@@ -249,19 +282,19 @@ export class Stage {
       g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
       g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
       const m = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uHype: { value: 0 }, uScale: { value: 300 } },
+        uniforms: { uTime: { value: 0 }, uHype: { value: 0 }, uScale: { value: 300 }, uMotion: { value: 1 } },
         vertexShader: /* glsl */ `
           attribute vec3 aColor; attribute float aSeed;
-          uniform float uTime, uHype, uScale;
+          uniform float uTime, uHype, uScale, uMotion;
           varying vec3 vColor;
           void main(){
             vec3 p = position;
-            p.y += step(0.0, sin(uTime * (7.0 + aSeed * 4.0) + aSeed * 40.0)) * (0.02 + uHype * 0.16);
+            p.y += step(0.0, sin(uTime * (7.0 + aSeed * 4.0) + aSeed * 40.0)) * (0.02 + uHype * 0.16) * uMotion;
             vec4 mv = modelViewMatrix * vec4(p, 1.0);
             gl_Position = projectionMatrix * mv;
             float slot = floor(uTime * 10.0);
             float h = fract(sin(aSeed * 917.3 + slot * 13.17) * 43758.5453);
-            float flash = step(0.9965 - uHype * 0.012, h);
+            float flash = step(0.9965 - uHype * 0.012, h) * uMotion;
             float fade = clamp(1.25 - length(p.xz) * 0.05, 0.35, 1.0);
             vColor = mix(aColor * fade * (0.55 + 0.25 * uHype), vec3(1.0), flash);
             gl_PointSize = max(1.0, floor(0.16 * uScale / -mv.z + 0.5));
@@ -309,20 +342,65 @@ export class Stage {
       new THREE.PlaneGeometry(8, 2),
       new THREE.MeshBasicMaterial({ map: makeGymTexture(), fog: false }),
     );
-    banner.position.set(0, 5.4, -11.5);
+    banner.position.set(0, 2.4, -7.16);
+    banner.scale.set(0.82, 0.72, 1);
     gym.add(banner);
     scene.add(gym);
+
+    this.venueGroups = buildVenues(scene);
+    const shadowGeo = new THREE.PlaneGeometry(1, 1);
+    this.contactShadows = [0, 1].map(() => {
+      const material = new THREE.ShaderMaterial({
+        uniforms: { uOpacity: { value: 0.27 } },
+        vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+        fragmentShader: 'uniform float uOpacity; varying vec2 vUv; void main(){float r=length((vUv-0.5)*2.0);float a=(1.0-smoothstep(0.15,1.0,r))*uOpacity;gl_FragColor=vec4(0.035,0.045,0.07,a);}',
+        transparent: true, depthWrite: false,
+      });
+      const shadow = new THREE.Mesh(shadowGeo, material);
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.y = 0.007;
+      shadow.visible = false;
+      shadow.renderOrder = 1;
+      scene.add(shadow);
+      return shadow;
+    });
   }
 
-  /** 'arena' (crowd, jumbotron) or 'gym' (empty hall, heavy bags, banner). */
+  /** 'arena' aliases the dome; venueName always exposes the canonical key. */
   venue(name) {
-    const gym = name === 'gym';
-    this.venueName = name;
+    const key = name === 'arena' ? 'volt' : VENUE_CONFIG[name] ? name : 'pete';
+    const theme = VENUE_CONFIG[key];
+    const gym = key === 'gym', dome = key === 'volt';
+    this.venueName = key;
+    this.venueTheme = theme;
+    for (const [id, group] of Object.entries(this.venueGroups)) group.visible = id === key;
     this.gym.visible = gym;
-    this.crowd.visible = !gym;
-    this.sky.material.uniforms.uHorizon.value.setHex(gym ? 0x30200f : 0x241a4a);
-    this.stands.material.color.setHex(gym ? 0x1a120c : 0x0c0c26);
-    this.cones.forEach((c, i) => { c.visible = !gym || i === 2; });
+    this.crowd.visible = dome;
+    this.stands.visible = dome;
+    this.arenaRig.visible = dome;
+    this.board.visible = dome && this.cam?.shot !== 'attract';
+    this.sky.material.uniforms.uTop.value.set(theme.top);
+    this.sky.material.uniforms.uHorizon.value.set(theme.horizon);
+    this.scene.fog.color.set(theme.fog);
+    this.scene.fog.near = key === 'nova' ? 21 : 12;
+    this.scene.fog.far = key === 'nova' ? 65 : 34;
+    this.floor.material.color.set(theme.floor);
+    this.ambient.color.set(theme.skyLight);
+    this.ambient.groundColor.set(theme.groundLight);
+    this.keyLight.color.set(theme.keyLight);
+    this.ropeMats.forEach((m, i) => { m.userData.base.set(theme.ropes[i]); m.color.copy(m.userData.base); });
+    this.cones.forEach((c, i) => {
+      c.visible = dome && i < 2;
+      c.material.uniforms.uColor.value.set(theme.beam);
+    });
+    for (const bulb of this.bulbs) bulb.material.color.set(theme.bulb);
+    if (!this.venueTextures[key]) this.venueTextures[key] = { mat: makeMatTexture(this.renderer, theme), apron: makeApronTexture(theme) };
+    const textures = this.venueTextures[key];
+    this.ringCanvas.material.map = textures.mat;
+    for (let i = 0; i < this.apronMats.length; i++) {
+      if (i === 2 || i === 3) this.apronMats[i].color.set(theme.border);
+      else this.apronMats[i].map = textures.apron;
+    }
   }
 
   /**
@@ -380,7 +458,7 @@ export class Stage {
       uniforms: { uScale: { value: 300 } },
       vertexShader: /* glsl */ `
         attribute vec3 aColor; attribute float aSize; attribute float aAlpha;
-        uniform float uScale; varying vec3 vColor;
+        uniform float uScale; varying vec3 vColor; varying float vAlive;
         void main(){
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           gl_Position = projectionMatrix * mv;
@@ -388,8 +466,11 @@ export class Stage {
           float px = floor(aSize * uScale / max(-mv.z, 0.2) * (0.35 + 0.65 * aAlpha) + 0.5);
           gl_PointSize = aAlpha > 0.0 ? clamp(px, 1.0, 64.0) : 0.0;
           vColor = aColor;
+          vAlive = aAlpha;
         }`,
-      fragmentShader: /* glsl */ `varying vec3 vColor; void main(){ gl_FragColor = vec4(vColor, 1.0); }`,
+      // A zero point size may be clamped to one pixel by WebGL; discard dead
+      // particles explicitly so old confetti never becomes permanent snow.
+      fragmentShader: /* glsl */ `varying vec3 vColor; varying float vAlive; void main(){ if(vAlive <= 0.0) discard; gl_FragColor = vec4(vColor, 1.0); }`,
       depthTest: false, depthWrite: false, transparent: true,
     });
     this.pointMats.push(m);
@@ -424,6 +505,7 @@ export class Stage {
   }
 
   spawn(p, v, color, size, life, grav = 1) {
+    if (this.reducedMotion) return;
     const s = this.sp;
     const i = s.cursor;
     s.cursor = (s.cursor + 1) % this.sparkN;
@@ -451,7 +533,7 @@ export class Stage {
     this.fovKick = -3 - power * 2.5;
     this.flash(pal[0], Math.min(0.28, 0.06 + power * 0.06));
     this.hype = Math.min(1, this.hype + 0.35 * power);
-    for (const m of this.ropeMats) m.color.setScalar(1);
+    if (!this.reducedMotion) for (const m of this.ropeMats) m.color.setScalar(1);
   }
 
   clash(pos) {
@@ -528,6 +610,7 @@ export class Stage {
   }
 
   ring(pos, color, size, dur = 0.3) {
+    if (this.reducedMotion) return;
     const r = this.rings.find((x) => !x.visible) || this.rings[0];
     r.visible = true;
     r.position.copy(pos);
@@ -538,6 +621,7 @@ export class Stage {
   }
 
   star(pos, color, size) {
+    if (this.reducedMotion) return;
     const s = this.stars.find((x) => !x.visible) || this.stars[0];
     s.visible = true;
     s.position.copy(pos);
@@ -548,15 +632,18 @@ export class Stage {
   }
 
   shake(amount) {
+    if (this.reducedMotion) return;
     this.trauma = Math.min(1, this.trauma + amount);
   }
 
   flash(color, amt) {
+    if (this.reducedMotion) return;
     this.retro.uniforms.uFlash.value.copy(color);
     this.flashAmt = Math.max(this.flashAmt, amt);
   }
 
   beat(strength = 1) {
+    if (this.reducedMotion) return;
     this.pulse = Math.max(this.pulse, 0.6 * strength);
   }
 
@@ -567,6 +654,7 @@ export class Stage {
    */
   shot(name, opts = {}) {
     const c = this.cam;
+    if (this.reducedMotion && name === 'custom') name = 'fight';
     c.shot = name;
     c.shotT = 0;
     c.rate = opts.rate ?? 4;
@@ -574,7 +662,7 @@ export class Stage {
     c.dolly = opts.dolly ?? 0;
     c.lift = opts.lift ?? 0;
     c.focus = opts.focus ?? null;
-    c.hfov = opts.hfov ?? SHOT_HFOV[name] ?? 50;
+    c.hfov = this.reducedMotion && name === 'fight' ? SHOT_HFOV.fight : opts.hfov ?? SHOT_HFOV[name] ?? 50;
     if (opts.pos) c.customPos = opts.pos.clone();
     if (opts.look) c.customLook = opts.look.clone();
     if (opts.snap) {
@@ -591,25 +679,27 @@ export class Stage {
     const look = _v2;
     switch (c.shot) {
       case 'attract': {
-        const a = t * 0.18 + 0.4;
-        pos.set(Math.sin(a) * 4.6, 2.1 + Math.sin(t * 0.3) * 0.5, Math.cos(a) * 4.6);
+        const a = this.reducedMotion ? 0.35 : 0.35 + Math.sin(t * 0.075) * 0.48;
+        pos.set(Math.sin(a) * 5.5, 2.7, Math.cos(a) * 5.5);
         look.set(0, 1.15, 0);
         break;
       }
       case 'intro': {
-        // close-up on the new challenger, pulling back
-        const k = Math.min(1, c.shotT / 1.6);
-        const e = 1 - Math.pow(1 - k, 3);
-        const f = c.focus || look.set(0, 1.6, OPP_Z);
-        pos.set(0.55 - e * 0.9, 1.55 + e * 0.25, OPP_Z + 0.75 + e * 1.4);
-        look.copy(f);
+        // Establish the room, then settle on the challenger. The final view
+        // keeps their full crest and gloves in frame even on a narrow screen.
+        const k = this.reducedMotion ? 1 : Math.min(1, Math.max(0, c.shotT - 0.4) / 1.8);
+        const e = k * k * (3 - 2 * k);
+        const fx = c.focus?.x ?? 0, fy = c.focus?.y ?? 1.6, fz = c.focus?.z ?? OPP_Z;
+        pos.set(3.15 - e * 2.7, 3.15 - e * 1.08, 5.1 - e * 2.22);
+        look.set(fx, 1.3 + (fy - 0.12 - 1.3) * e, -2.1 + (fz + 2.1) * e);
         break;
       }
       case 'ko': {
-        const f = c.focus || _v2.set(0, 1, OPP_Z);
-        const a = 1.2 + c.shotT * 0.35 * (c.yaw >= 0 ? 1 : -1);
-        pos.set(f.x + Math.sin(a) * 2.2, 0.7, f.z + Math.cos(a) * 2.2);
-        look.set(f.x, 0.75, f.z);
+        const fx = c.focus?.x ?? 0, fz = c.focus?.z ?? OPP_Z;
+        const side = c.yaw >= 0 ? 1 : -1;
+        const settle = this.reducedMotion ? 1 : Math.min(1, c.shotT / 0.8);
+        pos.set(fx + side * (2.6 - settle * 0.18), 1.55, fz + side * 1.6);
+        look.set(fx, 0.4, fz - side * 0.82);
         break;
       }
       case 'custom':
@@ -617,17 +707,17 @@ export class Stage {
         look.copy(c.customLook);
         break;
       case 'results': {
-        const a = t * 0.12;
-        pos.set(Math.sin(a) * 3.4, 1.6, Math.cos(a) * 3.4);
+        pos.set(2.45, 2.1, 4.05);
         look.set(0, 1.1, 0);
         break;
       }
       default: {
         const [cy, cr, ly, cx = 0] = CAM;
-        const yaw = c.yaw + Math.sin(t * 0.4) * 0.03;
-        const r = cr - c.dolly;
-        pos.set(cx + Math.sin(yaw) * r, cy + c.lift, PLAYER_Z + Math.cos(yaw) * r);
-        look.set(Math.sin(yaw) * -0.3, ly + c.lift * 0.3, OPP_Z + 0.05);
+        const yaw = this.reducedMotion ? 0 : c.yaw;
+        const lift = this.reducedMotion ? 0 : Math.min(0.14, Math.max(-0.1, c.lift));
+        const r = cr - (this.reducedMotion ? 0 : Math.min(0.08, c.dolly));
+        pos.set(cx + Math.sin(yaw) * r, cy + lift, PLAYER_Z + Math.cos(yaw) * r);
+        look.set(Math.sin(yaw) * -0.3, ly + lift * 0.3, OPP_Z + 0.05);
       }
     }
     const k = snap ? 1 : damp(c.rate, dt);
@@ -683,23 +773,34 @@ export class Stage {
     this.pulse *= Math.exp(-realDt * 6);
     this.hype *= Math.exp(-realDt * 0.9);
     this.crowd.material.uniforms.uTime.value = t;
-    this.crowd.material.uniforms.uHype.value = this.hype;
+    this.crowd.material.uniforms.uHype.value = this.reducedMotion ? 0 : this.hype;
+    this.crowd.material.uniforms.uMotion.value = this.reducedMotion ? 0 : 1;
     for (const m of this.ropeMats) m.color.lerp(m.userData.base, damp(5, realDt));
     for (const c of this.cones) {
       const ph = c.userData.phase;
-      c.rotation.z = Math.sin(t * 0.5 + ph) * 0.18;
-      c.rotation.x = Math.cos(t * 0.37 + ph) * 0.14;
-      c.material.uniforms.uBoost.value = 1 + this.pulse * 0.5 + this.hype * 0.6;
+      c.rotation.z = this.reducedMotion ? 0 : Math.sin(t * 0.23 + ph) * 0.08;
+      c.rotation.x = this.reducedMotion ? 0 : Math.cos(t * 0.19 + ph) * 0.06;
+      c.material.uniforms.uBoost.value = this.reducedMotion ? 0.65 : 0.8 + this.pulse * 0.1 + this.hype * 0.12;
     }
-    this.board.visible = this.cam.shot !== 'attract' && this.venueName !== 'gym'; // keep the title logo clean
-    if (this.gym.visible) for (const b of this.bags) b.rotation.z = Math.sin(t * 0.9 + b.userData.phase) * 0.035;
-    const chase = Math.floor(t * 8);
-    this.bulbs.forEach((b, i) => b.material.color.setHex((i + chase) % 4 === 0 && this.hype > 0.3 ? 0xfff0a0 : 0xd8c890));
+    this.board.visible = this.cam.shot !== 'attract' && this.venueName === 'volt';
+    if (this.gym.visible) for (const b of this.bags) b.rotation.z = this.reducedMotion ? 0 : Math.sin(t * 0.65 + b.userData.phase) * 0.025;
+    for (let i = 0; i < this.contactShadows.length; i++) {
+      const fighter = this.fighters[i], shadow = this.contactShadows[i];
+      shadow.visible = !!fighter && fighter.root.visible;
+      if (!fighter) continue;
+      const fall = Math.min(1, Math.abs(fighter.rig.rotation.x) / 1.5);
+      const height = Math.max(0, fighter.rig.position.y);
+      _shadow.set(fighter.rig.position.x, 0, fighter.rig.position.z - fall * 0.62).applyMatrix4(fighter.root.matrixWorld);
+      shadow.position.set(_shadow.x, 0.007, _shadow.z);
+      shadow.scale.set((0.66 + fall * 0.28) * fighter.bulk, 0.57 + fall * 1.05, 1);
+      shadow.material.uniforms.uOpacity.value = Math.max(0.035, 0.26 - height * 0.1);
+    }
 
     // camera
     this.#shotTarget(realDt);
     const cam = this.camera;
     cam.position.copy(this.cam.pos);
+    if (this.reducedMotion) this.trauma = this.fovKick = this.flashAmt = 0;
     const tr = this.trauma * this.trauma;
     this.trauma = Math.max(0, this.trauma - realDt * 1.8);
     if (tr > 0) {
@@ -770,8 +871,8 @@ const RetroShader = {
     tDiffuse: { value: null },
     uFlash: { value: new Color() },
     uFlashAmt: { value: 0 },
-    uLevels: { value: 14 },
-    uDither: { value: 0.9 },
+    uLevels: { value: 16 },
+    uDither: { value: 0.55 },
   },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
@@ -813,7 +914,7 @@ function makeConeMaterial(hex) {
       uniform vec3 uColor; uniform float uBoost; varying float vY; varying float vRim;
       void main(){
         float k = smoothstep(-5.3, 0.0, vY);
-        gl_FragColor = vec4(uColor * k * 0.07 * vRim * vRim * uBoost, 1.0);
+        gl_FragColor = vec4(uColor * k * 0.018 * vRim * vRim * uBoost, 1.0);
       }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
@@ -840,49 +941,59 @@ function pixelTexture(c, nearest = true) {
 }
 
 /** Light canvas mat with a blue border and the center logo, like the SNES ring. */
-function makeMatTexture(renderer) {
+function makeMatTexture(renderer, theme = VENUE_CONFIG.volt) {
   const [c, g] = pixelCanvas(256, 256);
-  g.fillStyle = '#6c7cc0';
+  g.fillStyle = theme.canvas;
   g.fillRect(0, 0, 256, 256);
-  g.fillStyle = '#5e6cb0';
-  for (let y = 0; y < 256; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 256; x += 4) g.fillRect(x, y, 2, 2);
-  g.fillStyle = '#182c90';
+  g.fillStyle = theme.fleck;
+  for (let y = 0; y < 256; y += 8) for (let x = (y / 8) % 2 ? 4 : 0; x < 256; x += 8) g.fillRect(x, y, 1, 1);
+  g.fillStyle = theme.border;
   g.fillRect(0, 0, 256, 14);
   g.fillRect(0, 242, 256, 14);
   g.fillRect(0, 0, 14, 256);
   g.fillRect(242, 0, 14, 256);
-  g.fillStyle = '#f0f0f0';
+  g.fillStyle = '#d5d8d2';
   g.fillRect(14, 14, 228, 3);
   g.fillRect(14, 239, 228, 3);
   g.fillRect(14, 14, 3, 228);
   g.fillRect(239, 14, 3, 228);
-  g.fillStyle = '#2040b8';
+  // An understated seal and corner marks leave a clean field behind the feet.
+  g.fillStyle = theme.mark;
   g.beginPath();
-  g.arc(128, 128, 40, 0, Math.PI * 2);
+  g.arc(128, 128, 37, 0, Math.PI * 2);
   g.fill();
-  g.fillStyle = '#f8d030';
-  g.font = `16px ${PIXEL_FONT}`;
+  g.strokeStyle = theme.border; g.lineWidth = 2;
+  g.beginPath(); g.arc(128, 128, 41, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = theme.accent;
+  g.font = `15px ${PIXEL_FONT}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText('VB', 129, 129);
+  g.font = `7px ${PIXEL_FONT}`;
+  g.fillStyle = theme.border;
+  g.fillText(theme.name, 128, 58, 186);
+  g.font = `5px ${PIXEL_FONT}`;
+  g.fillText('WORLD VIRTUAL BOXING', 128, 200, 176);
+  g.fillStyle = theme.accent;
+  for (const x of [21, 218]) for (const y of [21, 218]) g.fillRect(x, y, 17, 17);
   const tex = pixelTexture(c, false);
   tex.magFilter = THREE.NearestFilter;
   tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
   return tex;
 }
 
-function makeApronTexture() {
+function makeApronTexture(theme = VENUE_CONFIG.volt) {
   const [c, g] = pixelCanvas(256, 32);
-  g.fillStyle = '#1830a0';
+  g.fillStyle = theme.border;
   g.fillRect(0, 0, 256, 32);
-  g.fillStyle = '#f0f0f0';
+  g.fillStyle = theme.mark;
   g.fillRect(0, 2, 256, 2);
   g.fillRect(0, 28, 256, 2);
   g.font = `8px ${PIXEL_FONT}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillStyle = '#f8d030';
-  g.fillText('VIRTUABOX  ★  WVBA', 128, 17);
+  g.fillStyle = theme.accent;
+  g.fillText(theme.name, 128, 17, 235);
   return pixelTexture(c);
 }
 
