@@ -96,7 +96,9 @@ share sheet, or to save/copy on desktop.
   broad shoulders and lightning trunks. Gloves have thumbs and cuffs, boots
   have laces, and fighters animate back to their feet after a knockdown.
 - The UI uses Press Start 2P, SNES menu windows, and Super Famicom colored face
-  buttons for the punch pad.
+  buttons for the punch pad. The controller has a molded gray shell, olive LCD
+  turn display, recessed charcoal D-pad and round, raised face buttons, with a
+  central super button and printed blue labels inspired by handheld consoles.
 
 ## Screens and UI
 
