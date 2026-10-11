@@ -34,15 +34,17 @@ Every exchange is two turns, each a single decision with instant payoff.
 
 KO all three fighters before the **2:00** clock runs out. Every bout uses a
 **three-knockdown rule for both fighters**: empty a health bar to score a
-knockdown, and the third knockdown is the KO. The referee steps in with a
-one-second count and an animated count signal. Fighters rise at **six** after
-their first fall (60% health) and **eight** after their second (40% health).
-On the third fall the referee counts all the way to **ten** and waves it off.
+knockdown, and the third knockdown is an **immediate KO, with no count**. On the
+first two falls the referee speaks each number at one-second intervals with an
+animated count signal. Fighters rise at **six** after their first fall (60%
+health) and **eight** after their second (40% health).
+On the third fall the KO announcement plays immediately.
 Three markers under each health bar track falls in the current bout.
 
 The match clock stops for counts, recoveries, KO celebrations and introductions;
-pause also freezes the referee. Knockdown markers reset for each new opponent,
-and KO bonuses and circuit progress are awarded only after the third fall.
+pause also freezes the referee and their spoken number. Knockdown markers reset
+for each new opponent, and KO bonuses and circuit progress are awarded only
+after the third fall.
 
 New to it? Pick **TRAINING GYM** from the main menu. Coach Pops walks you
 through the instruction booklet one move per page: slip, duck, block, read it,
@@ -163,7 +165,7 @@ js/rules.js             attacks, reads, guards, damage/score constants, opponent
 js/boxer.js             procedural boxers (toon + ink outline, or green ghost wireframe), 2-bone IK, tells, guards, slips, punches, KOs
 js/stage.js             three.js arena + training gym at ~232 rows, 16-bit palette + ordered-dither pass, pixel FX, camera shots, 3D portraits
 js/venues.js            batched procedural venue scenery and venue palettes
-js/audio.js             ElevenLabs samples + WebAudio synth fallback
+js/audio.js             leveled combat samples, spoken referee counts + WebAudio synth fallback
 js/share.js             1080×1352 pixel-art share card + share text
 js/vendor/three.js      tree-shaken three.js r186 bundle (generated)
 audio/                  generated SFX, announcer lines and soundtrack (mp3)
@@ -175,8 +177,9 @@ tools/                  asset/bundle generators
 ## Fight regression checks
 
 The browser checks exercise real keyboard controls and the fight loop, including
-both fighters' three knockdowns, counts, health recovery, pause/restart, lethal
-super and chip damage, and KO scoring. They also play a full-health circuit,
+both fighters' spoken recovery counts, immediate third-knockdown KOs, health
+recovery, pause/restart, punch audio dispatch, lethal super and chip damage,
+and KO scoring. They also play a full-health circuit,
 verify venue changes and reject canceled gestures and punches after the bell.
 Presentation checks cover saved motion settings, keyboard navigation and menu
 fit at four phone/desktop sizes. They require Playwright and Chromium:
@@ -201,6 +204,9 @@ npm i --no-save playwright-core && node tools/render-assets.mjs
 
 # SFX, announcer and music via ElevenLabs (delete a file to regenerate it)
 ELEVENLABS_API_KEY=... node tools/gen-audio.mjs
+
+# Spoken referee numbers, generated locally (macOS Daniel voice + ffmpeg)
+node tools/gen-referee-audio.mjs
 ```
 
 Never commit API keys; `tools/gen-audio.mjs` only reads the key from the

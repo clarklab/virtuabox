@@ -48,7 +48,9 @@ try {
   page.setDefaultTimeout(45_000);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${server.address().port}/?dtcap=0.25&ts=4`);
+  // Keep accelerated frames below the shortest input window, including when
+  // software rendering slows down. A 1-second jump can skip an entire tell.
+  await page.goto(`http://127.0.0.1:${server.address().port}/?dtcap=0.025&ts=4`);
   await page.waitForFunction(() => window.__vb?.stage);
 
   async function capture(name) {
@@ -82,10 +84,23 @@ try {
     // handlers; attack damage, fightLoop, countdown and match flow run unchanged.
     const state = () => {
       const g = window.__vb.G;
-      return { ...Object.fromEntries(['scene', 'mode', 'clock', 'clockOn', 'paused', 'hp', 'oppHp', 'oppMax', 'playerDowns', 'oppDowns', 'count', 'fight', 'kos', 'score', 'reason'].map((k) => [k, g[k]])), venue: window.__vb.stage.venueName };
+      return { ...Object.fromEntries(['scene', 'mode', 'clock', 'clockOn', 'paused', 'hp', 'oppHp', 'oppMax', 'playerDowns', 'oppDowns', 'count', 'fight', 'kos', 'score', 'reason'].map((k) => [k, g[k]])), venue: window.__vb.stage.venueName, refereeVisible: document.querySelector('#referee').getAttribute('aria-hidden') === 'false' };
     };
     const key = (key) => window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
-    const test = window.__fightTest = { R, state, key, frames: [], goal: null, autoDefend: true, autoAttack: false, captureBouts: false, capturedBouts: [], captureReady: null };
+    const test = window.__fightTest = { R, state, key, frames: [], sounds: [], goal: null, autoDefend: true, autoAttack: false, captureBouts: false, capturedBouts: [], captureReady: null };
+    // Record calls on the actual audio instance, retaining playback. This checks
+    // the fight-loop wiring rather than calling the sound methods ourselves.
+    for (const method of ['count', 'cancelCount', 'pauseCount', 'resumeCount', 'whoosh', 'hit', 'clash', 'voice', 'play']) {
+      const original = window.__vb.sound[method];
+      if (typeof original !== 'function') throw new Error(`Missing sound.${method}()`);
+      window.__vb.sound[method] = function (...args) {
+        const event = { method, args: args.map((arg) => typeof arg === 'object' ? undefined : arg), ...state(), read: window.__vb.G.lastRead?.res };
+        test.sounds.push(event);
+        const result = original.apply(this, args);
+        if (method === 'play') event.played = !!result;
+        return result;
+      };
+    }
     function frame() {
       const g = window.__vb.G;
       test.frames.push(state());
@@ -96,7 +111,9 @@ try {
       }
       if (g.scene === 'fight' && !g.paused) {
         if (g.mode === 'defend' && g.def?.total && !g.def.action) {
-          if (test.goal === 'player' || (test.goal === 'chip' && g.def.key !== 'body')) {
+          if (test.goal === 'blocked') {
+            key('ArrowUp');
+          } else if (test.goal === 'player' || (test.goal === 'chip' && g.def.key !== 'body')) {
             g.hp = 1;
             if (test.goal === 'chip') key('ArrowUp');
             test.goal = null;
@@ -106,7 +123,10 @@ try {
             key({ L: 'ArrowLeft', R: 'ArrowRight', SLIP: 'ArrowLeft', DUCK: 'ArrowDown', BLOCK: 'ArrowUp' }[answer]);
           }
         }
-        if (g.mode === 'attack' && g.punchWait && ['opponent', 'super'].includes(test.goal)) {
+        if (g.mode === 'attack' && g.punchWait && test.goal === 'blocked' && R.GUARDS[g.guard].length) {
+          key(R.QUADS[R.GUARDS[g.guard][0]].keys[0]);
+          test.goal = null;
+        } else if (g.mode === 'attack' && g.punchWait && ['opponent', 'super'].includes(test.goal)) {
           g.oppHp = 1;
           if (test.goal === 'super') { g.stars = 1; key(' '); }
           else key(R.QUADS.find((q) => !R.GUARDS[g.guard].includes(q.id)).keys[0]);
@@ -137,31 +157,43 @@ try {
     assert.equal(intro.oppDowns, 0);
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => window.__vb.G.mode === 'defend');
+    await page.evaluate(() => window.__vb.sound.ready);
   }
 
   async function down(victim, number, attack = victim === 'player' ? 'player' : 'opponent') {
-    const startIndex = await page.evaluate((goal) => {
+    const { startIndex, soundIndex } = await page.evaluate((goal) => {
       window.__fightTest.autoDefend = true;
       window.__fightTest.goal = goal;
-      return window.__fightTest.frames.length;
+      return { startIndex: window.__fightTest.frames.length, soundIndex: window.__fightTest.sounds.length };
     }, attack);
     await page.waitForFunction(({ victim, number }) => {
       const g = window.__vb.G;
-      return g.mode === 'count' && g[victim === 'player' ? 'playerDowns' : 'oppDowns'] === number;
+      return g.mode === (number < 3 ? 'count' : 'ko') && g[victim === 'player' ? 'playerDowns' : 'oppDowns'] === number;
     }, { victim, number });
     await page.evaluate(() => { window.__fightTest.autoDefend = true; });
-    return { victim, number, startIndex, entry: await snapshot() };
+    return { victim, number, startIndex, soundIndex, entry: await snapshot() };
   }
 
   async function checkCount(run) {
-    const { victim, number, entry, startIndex } = run;
+    const { victim, number, entry, startIndex, soundIndex } = run;
+    assert.ok(number < 3, 'only the first two knockdowns have referee counts');
     await page.waitForFunction(() => window.__vb.G.mode !== 'count');
     const end = await snapshot();
     const frames = await page.evaluate((i) => window.__fightTest.frames.slice(i), startIndex);
     const counts = frames.filter((f) => f.mode === 'count');
-    const last = number === 1 ? 6 : number === 2 ? 8 : 10;
+    const last = number === 1 ? 6 : 8;
     const seen = [...new Set(counts.map((f) => f.count).filter((n) => n > 0))];
-    assert.deepEqual(seen, Array.from({ length: last }, (_, i) => i + 1), `${victim} knockdown ${number}: count each number in order`);
+    const expectedCount = Array.from({ length: last }, (_, i) => i + 1);
+    assert.deepEqual(seen, expectedCount, `${victim} knockdown ${number}: count each number in order`);
+    const soundEvents = await page.evaluate((i) => window.__fightTest.sounds.slice(i), soundIndex);
+    const spoken = soundEvents.filter((e) => e.method === 'count');
+    assert.deepEqual(spoken.map((e) => e.args[0]), expectedCount, `${victim} knockdown ${number}: referee says each count once in order`);
+    for (const event of spoken) {
+      assert.equal(event.count, event.args[0], 'spoken count matches the displayed count');
+      assert.equal(event.refereeVisible, true, 'count voice accompanies the referee card');
+      assert.equal(event.paused, false, 'no new count is spoken while paused');
+      assert.ok(soundEvents.some((e) => e.method === 'play' && e.args[0] === `vo-count-${event.args[0]}` && e.played), `count ${event.args[0]} plays its recorded referee voice`);
+    }
     const hpKey = victim === 'player' ? 'hp' : 'oppHp';
     for (const f of counts) {
       assert.equal(f.clockOn, false, 'clock must stay stopped throughout the count');
@@ -170,24 +202,38 @@ try {
       assert.equal(f.score, entry.score, 'no KO bonus awarded during the count');
       assert.equal(f.fight, entry.fight, 'no opponent advance during the count');
       assert.equal(f.reason, null, 'no result before the count completes');
-      if ((f.count > 0 && f.count < last) || number === 3) assert.equal(f[hpKey], 0, 'a boxer must remain down until recovery');
+      if (f.count > 0 && f.count < last) assert.equal(f[hpKey], 0, 'a boxer must remain down until recovery');
     }
-    if (number < 3) {
-      const recovery = frames.find((f) => f.mode !== 'count' && f[hpKey] > 0 && f[victim === 'player' ? 'playerDowns' : 'oppDowns'] === number);
-      assert.ok(recovery, 'the same bout resumes after the first two knockdowns');
-      const expected = await page.evaluate(({ victim, number }) => {
-        const { R } = window.__fightTest;
-        return R.recoveryHp(victim === 'player' ? R.PLAYER_HP : window.__vb.G.oppMax, number);
-      }, { victim, number });
-      assert.equal(recovery[hpKey], expected, 'restore the intended recovery HP');
-      assert.equal(end.kos, entry.kos);
-      assert.equal(end.fight, entry.fight);
-      assert.equal(end.reason, null);
-    } else {
-      assert.equal(end[hpKey], 0, 'third knockdown must not restore HP');
-      assert.ok(['ko', 'over', 'intro'].includes(end.mode), 'third knockdown leads to a KO');
-    }
+    const recovery = frames.find((f) => f.mode !== 'count' && f[hpKey] > 0 && f[victim === 'player' ? 'playerDowns' : 'oppDowns'] === number);
+    assert.ok(recovery, 'the same bout resumes after the first two knockdowns');
+    const expected = await page.evaluate(({ victim, number }) => {
+      const { R } = window.__fightTest;
+      return R.recoveryHp(victim === 'player' ? R.PLAYER_HP : window.__vb.G.oppMax, number);
+    }, { victim, number });
+    assert.equal(recovery[hpKey], expected, 'restore the intended recovery HP');
+    assert.equal(end.kos, entry.kos);
+    assert.equal(end.fight, entry.fight);
+    assert.equal(end.reason, null);
     return end;
+  }
+
+  async function checkKO(run) {
+    const { victim, number, entry, startIndex, soundIndex } = run;
+    assert.equal(number, 3);
+    assert.equal(entry.mode, 'ko', 'the third knockdown goes straight to KO');
+    assert.equal(entry[victim === 'player' ? 'hp' : 'oppHp'], 0, 'the third knockdown must not restore HP');
+    assert.equal(entry.count, 0, 'no count starts on the third knockdown');
+    assert.equal(entry.refereeVisible, false, 'the third knockdown never shows the referee card');
+    await page.waitForFunction(() => window.__vb.G.mode !== 'ko');
+    const frames = await page.evaluate((i) => window.__fightTest.frames.slice(i), startIndex);
+    const events = await page.evaluate((i) => window.__fightTest.sounds.slice(i), soundIndex);
+    assert.ok(!frames.some((f) => f.mode === 'count' || f.count > 0 || f.refereeVisible), 'no count or referee animation delays the third-fall KO');
+    assert.deepEqual(events.filter((e) => e.method === 'count' || (e.method === 'play' && /^vo-count-/.test(e.args[0]))), [], 'the referee does not count aloud after a third knockdown');
+    assert.ok(events.some((e) => e.method === 'voice' && e.args[0] === 'ko'), 'the third fall announces KO');
+    for (const f of frames.filter((f) => f.mode === 'ko')) {
+      assert.equal(f.clockOn, false);
+      assert.equal(f.clock, entry.clock, 'the KO must not consume fight time');
+    }
   }
 
   await start();
@@ -197,9 +243,12 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__vb.G.paused);
   const paused = await snapshot();
+  const pausedVoices = await page.evaluate(() => window.__fightTest.sounds.filter((e) => e.method === 'count').length);
   await page.keyboard.press('q');
   await page.waitForTimeout(400);
   assert.deepEqual(await snapshot(), paused, 'pause must freeze count, health, score, and clock');
+  assert.equal(await page.evaluate(() => window.__fightTest.sounds.filter((e) => e.method === 'count').length), pausedVoices, 'pause must stop future spoken count numbers');
+  assert.ok(await page.evaluate(() => window.__fightTest.sounds.some((e) => e.method === 'pauseCount')), 'pausing suspends the current count voice');
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.mi), 'resume', 'pause focuses its first menu item');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.mi), 'restart', 'Tab moves focus within the pause menu');
@@ -208,7 +257,7 @@ try {
   await checkCount(first);
   await checkCount(await down('opponent', 2));
   const third = await down('opponent', 3);
-  await checkCount(third);
+  await checkKO(third);
   await page.waitForFunction(() => window.__vb.G.fight === 1 && window.__vb.G.mode === 'intro');
   const nextBout = await snapshot();
   assert.equal(nextBout.kos, 1, 'only the third fall awards a KO');
@@ -216,23 +265,24 @@ try {
   assert.equal(nextBout.oppDowns, 0, 'opponent knockdowns reset per bout');
   assert.equal(nextBout.clockOn, false, 'next-opponent intro must stop the clock');
   assert.equal(nextBout.clock, third.entry.clock, 'KO animation and bout transition must not consume fight time');
-  console.log('PASS opponent: super, 6/8/10 counts, pause/resume, recovery, and next bout');
+  console.log('PASS opponent: super, spoken 6/8 counts, pause/resume, instant third-fall KO, and next bout');
 
   await start();
   await checkCount(await down('player', 1, 'chip'));
   await checkCount(await down('player', 2));
   const playerThird = await down('player', 3);
-  await checkCount(playerThird);
+  await checkKO(playerThird);
   await page.waitForFunction(() => window.__vb.G.reason === 'ko');
   const defeat = await snapshot();
   assert.equal(defeat.playerDowns, 3);
   assert.equal(defeat.kos, 0);
   assert.equal(defeat.clock, playerThird.entry.clock, 'player KO animation must not consume fight time');
-  console.log('PASS player: blocked chip, 6/8/10 counts, recovery, and third-fall defeat');
+  console.log('PASS player: blocked chip, spoken 6/8 counts, recovery, and instant third-fall defeat');
 
   await start();
   await down('opponent', 1);
   await page.keyboard.press('Escape');
+  const restartSoundIndex = await page.evaluate(() => window.__fightTest.sounds.length);
   await page.locator('#pause-menu [data-mi="restart"]').click();
   await page.waitForFunction(() => window.__vb.G.mode === 'intro' && window.__vb.G.oppDowns === 0);
   await page.keyboard.press('Enter');
@@ -248,7 +298,21 @@ try {
   assert.ok(restarted.oppHp > 0);
   assert.notEqual(restarted.mode, 'count');
   assert.notEqual(restarted.mode, 'ko');
+  assert.deepEqual(await page.evaluate((i) => window.__fightTest.sounds.slice(i).filter((e) => e.method === 'count' || (e.method === 'play' && /^vo-count-/.test(e.args[0]))), restartSoundIndex), [], 'an abandoned countdown must not speak over the new match');
   console.log('PASS restart: an interrupted count cannot alter the new match');
+
+  const blockedIndex = await page.evaluate(() => {
+    window.__fightTest.goal = 'blocked';
+    return window.__fightTest.sounds.length;
+  });
+  await page.waitForFunction((i) => window.__fightTest.sounds.slice(i).some((e) => e.method === 'clash' && e.mode === 'attack'), blockedIndex);
+  const punchSounds = await page.evaluate(() => window.__fightTest.sounds);
+  for (const [mode, method, label] of [
+    ['attack', 'whoosh', 'player punch swing'], ['attack', 'hit', 'player landed punch'], ['attack', 'clash', 'player blocked punch'],
+    ['defend', 'whoosh', 'opponent punch swing'], ['defend', 'hit', 'opponent landed punch'], ['defend', 'clash', 'opponent blocked punch'],
+  ]) assert.ok(punchSounds.some((e) => e.mode === mode && e.method === method), `${label} dispatches its sound`);
+  assert.ok(punchSounds.some((e) => e.mode === 'defend' && e.method === 'whoosh' && e.read === 'perfect'), 'an evaded opponent punch has a whoosh');
+  console.log('PASS punch audio: player/opponent swings, landed hits, blocked hits, and evaded punches');
 
   // Keep a real mouse pointer active so capture works for the synchronous
   // cancellation probes; the events still enter the normal arena listeners.
@@ -335,13 +399,14 @@ try {
   }
   await page.waitForFunction(() => window.__vb.G.reason !== null, undefined, { timeout: 90_000 });
   const champion = await snapshot();
-  assert.equal(champion.reason, 'champ', 'a perfect player can finish all three bouts within the match clock');
+  assert.equal(champion.reason, 'champ', `a perfect player can finish all three bouts within the match clock: ${JSON.stringify(champion)}`);
   assert.equal(champion.kos, 3);
   assert.equal(champion.playerDowns, 0);
   assert.ok(champion.clock > 0, 'the two-minute circuit must remain winnable');
   const circuit = await page.evaluate((i) => window.__fightTest.frames.slice(i), circuitIndex);
   for (const fight of [0, 1, 2]) {
-    assert.deepEqual([...new Set(circuit.filter((s) => s.fight === fight && s.mode === 'count').map((s) => s.oppDowns))], [1, 2, 3], `bout ${fight + 1} needs all three knockdowns`);
+    assert.deepEqual([...new Set(circuit.filter((s) => s.fight === fight && s.mode === 'count').map((s) => s.oppDowns))], [1, 2], `bout ${fight + 1} counts only its first two knockdowns`);
+    assert.ok(circuit.some((s) => s.fight === fight && s.mode === 'ko' && s.oppDowns === 3 && s.count === 0 && !s.refereeVisible), `bout ${fight + 1} finishes on the third knockdown`);
   }
   console.log(`PASS full circuit: three real-health bouts, nine knockdowns, ${champion.clock.toFixed(1)}s remaining`);
 

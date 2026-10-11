@@ -945,18 +945,20 @@ async function fightLoop(ctx) {
 }
 
 function hideReferee() {
+  sound.cancelCount();
   $('#referee').className = '';
   $('#referee').setAttribute('aria-hidden', 'true');
   G.count = 0;
 }
 
-/** One down: suspend the exchange, count, then either a recovery or the KO. */
+/** Count the first two falls; wave off the third immediately. */
 async function knockdown(victim, my) {
   const isOpponent = victim === opp;
   const downs = isOpponent ? ++G.oppDowns : ++G.playerDowns;
   const finalDown = downs >= R.KNOCKDOWNS_TO_KO;
   const name = isOpponent ? OPP().short : 'YOU';
-  G.mode = 'count';
+  hideReferee();
+  G.mode = finalDown ? 'ko' : 'count';
   G.clockOn = false;
   G.def = null;
   G.punchWait = null;
@@ -968,8 +970,8 @@ async function knockdown(victim, my) {
   showTargets(null);
   updateHud();
   app.classList.remove('danger');
-  setTurn('idle', 'KNOCKDOWN!', `${name} · ${downs} OF ${R.KNOCKDOWNS_TO_KO}`);
-  setStatus('REFEREE COUNT');
+  setTurn('idle', finalDown ? 'KNOCKOUT!' : 'KNOCKDOWN!', finalDown ? 'THREE KNOCKDOWNS · BOUT OVER' : `${name} · ${downs} OF ${R.KNOCKDOWNS_TO_KO}`);
+  setStatus(finalDown ? 'KNOCKOUT' : 'REFEREE COUNT');
   G.timeScale = 0.55;
   sound.slowmo(true);
   sound.setIntensity(1);
@@ -978,49 +980,46 @@ async function knockdown(victim, my) {
   const focus = new THREE.Vector3();
   victim.root.getWorldPosition(focus);
   stage.shot('ko', { focus, rate: 5, yaw: isOpponent ? 1 : -1 });
-  popup('DOWN!', 'xl gold', 800);
-  sound.voice('down');
+  if (finalDown) {
+    popup('K.O.!!', 'xl gold', 1500);
+    sound.ko();
+    sound.voice('ko', 0.1);
+    sound.bell(3);
+    if (isOpponent) stage.confetti();
+  } else {
+    popup('DOWN!', 'xl gold', 800);
+    sound.voice('down');
+  }
   quake();
   await waitReal(0.7);
   if (my !== gen) return;
   G.timeScale = 1;
   sound.slowmo(false);
+  if (finalDown) {
+    stage.capture();
+    G.highlight = 99;
+    await waitReal(1.4);
+    if (my !== gen) return;
+    return 'ko';
+  }
   const ref = $('#referee');
   const number = $('#ref-count');
   const message = $('#ref-message');
   ref.className = 'show';
   ref.setAttribute('aria-hidden', 'false');
   $('#ref-downs').textContent = `${name} DOWN · ${downs}/3`;
-  message.textContent = finalDown ? 'LAST KNOCKDOWN' : 'STAY WITH ME!';
+  message.textContent = 'STAY WITH ME!';
   for (let n = 1; n <= R.countLimit(downs); n++) {
     G.count = n;
     number.textContent = n;
     ref.classList.toggle('raised', n % 2 === 1);
     ref.classList.toggle('last-count', n >= 8);
     $('#ref-progress').style.setProperty('--count', n / R.REFEREE_COUNT);
-    sound.tick(n >= 8);
+    sound.count(n);
     haptic(n === R.REFEREE_COUNT ? [30, 30, 90] : 12);
     // Pause-aware real seconds, independent of cinematic slow motion.
     await waitReal(1);
     if (my !== gen) return;
-  }
-  if (finalDown) {
-    G.mode = 'ko';
-    ref.classList.add('out');
-    message.textContent = 'YOU\'RE OUT!';
-    setTurn('idle', 'KNOCKOUT!', 'THREE KNOCKDOWNS · BOUT OVER');
-    setStatus('KNOCKOUT');
-    popup('K.O.!!', 'xl gold', 1500);
-    sound.ko();
-    sound.voice('ko', 0.1);
-    sound.bell(3);
-    if (isOpponent) stage.confetti();
-    stage.capture();
-    G.highlight = 99;
-    await waitReal(1.4);
-    if (my !== gen) return;
-    hideReferee();
-    return 'ko';
   }
   message.textContent = 'BACK ON YOUR FEET!';
   ref.classList.add('recovered');
@@ -1128,6 +1127,7 @@ async function startGame() {
   busy = true;
   sound.init();
   const my = ++gen;
+  sound.cancelCount();
   G.paused = false;
   $('#paused').classList.remove('show');
   await wipe(wipeEl, () => {
@@ -1220,10 +1220,9 @@ async function endGame(reason, my) {
     sound.voice('time', 0.3);
     setStatus('TIME UP');
   } else {
-    sound.voice('down', 0.2);
-    setStatus('DOWN AND OUT', 'bad');
+    setStatus('KNOCKED OUT', 'bad');
   }
-  setTurn('idle', reason === 'champ' ? 'CHAMPION!' : reason === 'time' ? 'TIME!' : 'DOWN!', '');
+  setTurn('idle', reason === 'champ' ? 'CHAMPION!' : reason === 'time' ? 'TIME!' : 'KNOCKOUT!', '');
   if (!stage.hasCapture) stage.capture();
   await waitReal(reason === 'ko' ? 1.2 : 1.8);
   if (my !== gen) return;
@@ -1404,6 +1403,7 @@ async function toTitle() {
   if (busy) return;
   busy = true;
   const my = ++gen;
+  sound.cancelCount();
   await wipe(wipeEl, () => {
     gameTimers.clear();
     realTimers.clear();
@@ -1530,6 +1530,7 @@ const pauseMenu = new Menu($('#paused'), {
 function pause() {
   if (G.paused || !canPause()) return;
   G.paused = true;
+  sound.pauseCount();
   cancelGesture();
   setClock(G.clock);
   deck.inert = true;
@@ -1556,6 +1557,7 @@ function closePause() {
 function resume() {
   closePause();
   sound.init();
+  sound.resumeCount();
   sound.ui('back');
   menuBeforePause?.activate(menuBeforePause.i);
   menuBeforePause = null;
@@ -1627,6 +1629,7 @@ async function enterGym() {
   if (busy) return;
   busy = true;
   const my = ++gen;
+  sound.cancelCount();
   await wipe(wipeEl, () => {
     gameTimers.clear();
     realTimers.clear();

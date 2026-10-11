@@ -1,6 +1,6 @@
-// Audio: ElevenLabs-generated samples (./audio, see tools/gen-audio.mjs) for
-// SFX, announcer and soundtrack, layered on a WebAudio synth. The synth also
-// covers everything if the samples fail to load.
+// Audio: generated samples (./audio, see tools/gen-audio.mjs and
+// tools/gen-referee-audio.mjs) for SFX, announcer, referee and soundtrack,
+// layered on WebAudio. Synth effects also cover missing SFX/music assets.
 
 const BPM = 150;
 const STEP = 60 / BPM / 4; // 16th note
@@ -10,10 +10,14 @@ const ROOTS = [45, 41, 43, 40];
 const ARP = [0, 7, 12, 15, 12, 7, 3, 7];
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
+// Generated impact samples have very different source levels. In particular,
+// hit-1 was 12 dB below hit-2 and disappeared under swings/music on small speakers.
+const COMBAT_PEAKS = { 'hit-1': 0.85, 'hit-2': 0.85, 'hit-3': 0.95, whoosh: 0.65, clash: 0.85 };
 const SAMPLES = [
   'hit-1', 'hit-2', 'hit-3', 'whoosh', 'clash', 'bell', 'bell-3', 'cheer', 'crowd', 'fall', 'slam', 'riser',
   'vo-fight', 'vo-ko', 'vo-champion', 'vo-time', 'vo-flawless', 'vo-down', 'vo-combo', 'vo-title',
   'vo-pete', 'vo-nova', 'vo-volt', 'music-fight',
+  ...Array.from({ length: 10 }, (_, i) => `vo-count-${i + 1}`),
 ];
 
 export class Sound {
@@ -25,29 +29,57 @@ export class Sound {
     this.onBeat = null;
     this.buffers = {};
     this.raw = {};
+    this.decoding = {};
+    this.sampleReady = {};
+    this.countPlayback = null;
     this.track = null;
     // Fetch bytes right away; decoding waits for the AudioContext (user tap).
-    this.fetching = Promise.all(SAMPLES.map(async (name) => {
+    this.fetching = Promise.all(SAMPLES.map((name) => this.sampleReady[name] = (async () => {
       try {
         const res = await fetch(`audio/${name}.mp3`);
-        if (res.ok) this.raw[name] = await res.arrayBuffer();
+        if (res.ok) {
+          this.raw[name] = await res.arrayBuffer();
+          // A short punch/count must not wait for the entire music download.
+          if (this.ctx) await this.#decode(name);
+        }
       } catch { /* offline or missing: synth fallback */ }
-    }));
+    })()));
+  }
+
+  #decode(name) {
+    if (this.decoding[name]) return this.decoding[name];
+    this.decoding[name] = (async () => {
+      try {
+        const buffer = await this.ctx.decodeAudioData(this.raw[name].slice(0));
+        const target = COMBAT_PEAKS[name];
+        if (target) {
+          let peak = 0;
+          for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+            for (const value of buffer.getChannelData(channel)) peak = Math.max(peak, Math.abs(value));
+          }
+          if (peak > 0.0001) {
+            const scale = target / peak;
+            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+              const data = buffer.getChannelData(channel);
+              for (let i = 0; i < data.length; i++) data[i] *= scale;
+            }
+          }
+        }
+        this.buffers[name] = buffer;
+        if (name === 'crowd') this.#crowdLoop();
+        if (name === 'music-fight') this.#startTrack();
+      } catch { /* ignore */ }
+    })();
+    return this.decoding[name];
   }
 
   async #decodeAll() {
+    await Promise.all(Object.keys(this.raw).map((name) => this.#decode(name)));
     await this.fetching;
-    await Promise.all(Object.entries(this.raw).map(async ([name, bytes]) => {
-      try {
-        this.buffers[name] = await this.ctx.decodeAudioData(bytes.slice(0));
-      } catch { /* ignore */ }
-    }));
-    if (this.buffers.crowd) this.#crowdLoop();
-    if (this.buffers['music-fight']) this.#startTrack();
   }
 
-  /** Play a decoded sample. Returns false if it isn't available. */
-  play(name, { gain = 1, rate = 1, delay = 0, dest } = {}) {
+  /** Play a decoded sample. Returns its source, or false if unavailable. */
+  play(name, { gain = 1, rate = 1, delay = 0, offset = 0, dest } = {}) {
     const buf = this.buffers[name];
     if (!this.ctx || !buf) return false;
     const src = this.ctx.createBufferSource();
@@ -56,17 +88,85 @@ export class Sound {
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g).connect(dest || this.sfx);
-    src.start(this.ctx.currentTime + delay);
-    return true;
+    src.addEventListener('ended', () => { src.disconnect(); g.disconnect(); }, { once: true });
+    src.start(this.ctx.currentTime + delay, offset);
+    return src;
   }
 
   voice(name, delay = 0) {
     return this.play(`vo-${name}`, { gain: 1.25, delay, dest: this.vo });
   }
 
+  /** Spoken referee number, with one active word and no queued/stale speech. */
+  count(number) {
+    this.cancelCount();
+    if (!this.ctx || !Number.isInteger(number) || number < 1 || number > 10) return;
+    const state = { number, offset: 0, source: null, startedAt: 0, paused: false };
+    this.countPlayback = state;
+    this.#startCount(state);
+  }
+
+  async #startCount(state) {
+    const name = `vo-count-${state.number}`;
+    if (!this.buffers[name]) {
+      await this.sampleReady[name];
+      if (this.raw[name]) await this.#decode(name);
+    }
+    if (this.countPlayback !== state || state.paused || state.source) return;
+    const buffer = this.buffers[name];
+    if (buffer && state.offset >= buffer.duration) {
+      this.countPlayback = null;
+      return;
+    }
+    const source = this.play(name, { gain: 1.35, dest: this.vo, offset: state.offset });
+    if (!source) {
+      this.countPlayback = null;
+      this.tick(state.number >= 8);
+      return;
+    }
+    state.source = source;
+    state.startedAt = this.now;
+    source.addEventListener('ended', () => {
+      if (this.countPlayback === state && state.source === source) this.countPlayback = null;
+    }, { once: true });
+  }
+
+  pauseCount() {
+    const state = this.countPlayback;
+    if (!state || state.paused) return;
+    state.paused = true;
+    if (state.source) {
+      state.offset += Math.max(0, this.now - state.startedAt);
+      const source = state.source;
+      state.source = null;
+      source.stop();
+    }
+  }
+
+  resumeCount() {
+    const state = this.countPlayback;
+    if (!state?.paused) return;
+    state.paused = false;
+    this.#startCount(state);
+  }
+
+  cancelCount() {
+    const state = this.countPlayback;
+    this.countPlayback = null;
+    state?.source?.stop();
+  }
+
+  #resume() {
+    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') {
+      // Autostart and returning from the background can suspend WebAudio.
+      // A later trusted input unlocks the same context; rejection is harmless.
+      this.ctx.resume().catch(() => {});
+    }
+  }
+
   init() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      this.#resume();
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -105,13 +205,17 @@ export class Sound {
     this.drive.connect(this.sfx);
 
     this.#crowdBed();
-    this.#decodeAll();
+    this.ready = this.#decodeAll();
+    const unlock = (event) => { if (event.isTrusted) this.#resume(); };
+    window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+    window.addEventListener('keydown', unlock, { capture: true });
+    this.#resume();
     this.nextTime = ctx.currentTime + 0.1;
     this.timer = setInterval(() => this.#schedule(), 25);
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
-      if (document.hidden) this.ctx.suspend();
-      else this.ctx.resume();
+      if (document.hidden) this.ctx.suspend().catch(() => {});
+      else this.#resume();
     });
   }
 
@@ -355,9 +459,11 @@ export class Sound {
     o.stop(t + 0.45);
     const name = power >= 2 ? 'hit-3' : body ? 'hit-2' : 'hit-1';
     const played = this.play(name, { gain: Math.min(1.6, 0.8 + power * 0.25), rate: 0.9 + Math.random() * 0.2 });
+    // A short upper-frequency crack keeps every real impact readable on phone
+    // speakers, where the sub-thump above is largely inaudible.
+    this.#noiseHit(t, { dest: this.sfx, type: 'highpass', freq: 3500, peak: played ? 0.16 : 0.35, decay: 0.03 });
     if (!played || power >= 2) {
       this.#noiseHit(t, { dest: this.sfx, type: 'lowpass', freq: 2400, peak: 0.6 * Math.min(1.5, power), decay: 0.09 });
-      this.#noiseHit(t, { dest: this.sfx, type: 'highpass', freq: 3500, peak: 0.35, decay: 0.03 });
     }
     this.crowd(0.3 + power * 0.25, 0.4);
   }
