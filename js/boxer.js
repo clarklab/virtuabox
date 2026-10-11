@@ -132,6 +132,11 @@ export class Boxer {
     this.o = o;
     const ghost = (this.isPlayer = !!o.ghost);
     this.color = new Color(o.color);
+    // Existing roster options also select the silhouette; the gray-haired
+    // training partner keeps his own veteran treatment.
+    this.style = ghost ? 'ghost' : o.belt || o.hair === 'spikes' ? 'champ'
+      : o.hair === 'mohawk' ? 'punk' : o.look?.hair === '#e0e0e8' ? 'coach' : 'speed';
+    const champ = this.style === 'champ';
     const bulk = o.bulk ?? 1;
     const tall = o.tall ?? 1;
     this.bulk = bulk;
@@ -156,7 +161,9 @@ export class Boxer {
       const toon = (hex) => this.#track(new THREE.MeshToonMaterial({ color: new Color(hex), gradientMap: ramp() }));
       this.toon = {
         skin: toon(look.skin || '#f0b080'),
+        skinShade: toon(new Color(look.skin || '#f0b080').multiplyScalar(0.72)),
         trunks: toon(look.trunks || o.color),
+        accent: toon(o.color),
         band: toon('#f8f8f8'),
         glove0: toon(look.gloves || '#e02020'),
         glove1: toon(look.gloves || '#e02020'),
@@ -170,9 +177,9 @@ export class Boxer {
     this.eyeMat = this.#track(new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }));
     this.inkMat = this.#track(new THREE.MeshBasicMaterial({ color: 0x080808, fog: false }));
 
-    // wireframe reads best low-poly; toon shading wants rounder shapes
-    const cyl = (rt, rb, h, seg, hs = 1, t0 = 0) => new THREE.CylinderGeometry(rt, rb, h, ghost ? seg : seg + 6, hs, ghost, t0);
-    const sph = (r, ws, hs) => new THREE.SphereGeometry(r, ghost ? ws : ws + 6, ghost ? hs : hs + 4);
+    // Keep broad facets legible at the game's native 232-row resolution.
+    const cyl = (rt, rb, h, seg, hs = 1, t0 = 0) => new THREE.CylinderGeometry(rt, rb, h, ghost ? seg : seg + 2, hs, ghost, t0);
+    const sph = (r, ws, hs) => new THREE.SphereGeometry(r, ghost ? ws : ws + 2, ghost ? hs : hs + 2);
 
     // ---- hierarchy -------------------------------------------------------
     this.root = new Group();
@@ -194,19 +201,20 @@ export class Boxer {
       upper: 0.29 * tall,
       fore: 0.28 * tall,
       shoulderY: 0.45 * tall,
-      shoulderX: 0.225 * bulk,
-      headY: 0.66 * tall,
-      gloveR: 0.108 * Math.sqrt(bulk),
+      shoulderX: (champ ? 0.255 : 0.225) * bulk,
+      headY: (ghost ? 0.66 : 0.69) * tall,
+      gloveR: (ghost ? 0.108 : champ ? 0.124 : 0.114) * Math.sqrt(bulk),
       gloveOffset: 0.085,
     });
 
     // torso: lathe, flattened front-to-back
     const prof = [
-      [0.145, -0.02], [0.155, 0.1], [0.185, 0.24], [0.225, 0.36], [0.235, 0.44], [0.19, 0.52], [0.08, 0.565],
+      [0.145, -0.02], [0.155, 0.1], [0.185, 0.24], [champ ? 0.255 : 0.225, 0.36], [champ ? 0.27 : 0.235, 0.44], [0.19, 0.52], [0.08, 0.565],
     ].map(([r, y]) => new THREE.Vector2(r, y * tall));
     const torsoGeo = new THREE.LatheGeometry(prof, ghost ? 8 : 16, Math.PI / 8);
     torsoGeo.scale(bulk, 1, 0.7 * bulk);
     this.#part(torsoGeo, this.torso, 'skin');
+    if (!ghost) this.#physique(tall);
 
     const neckGeo = cyl(0.055, 0.065, 0.12, 6);
     neckGeo.translate(0, 0.58 * tall, 0);
@@ -214,6 +222,7 @@ export class Boxer {
 
     // head
     this.head.position.y = D.headY;
+    if (!ghost) this.head.scale.set(champ ? 1.38 : 1.22, this.style === 'speed' ? 1.18 : 1.22, 1.18);
     const headGeo = sph(0.115, 8, 6);
     headGeo.scale(0.92, 1.12, 1.0);
     this.#part(headGeo, this.head, 'skin');
@@ -229,10 +238,11 @@ export class Boxer {
     }
 
     // trunks + waistband (+ title belt)
-    const shortsGeo = cyl(0.19 * bulk, 0.205 * bulk, 0.27, 8, 2, Math.PI / 8);
+    const shortsGeo = cyl(0.19 * bulk, 0.205 * bulk, ghost ? 0.27 : 0.16, 8, 2, Math.PI / 8);
     shortsGeo.scale(1, 1, 0.8);
-    shortsGeo.translate(0, -0.1, 0);
+    shortsGeo.translate(0, ghost ? -0.1 : -0.045, 0);
     this.#part(shortsGeo, this.hips, 'trunks');
+    if (!ghost) this.#kit();
     const bandGeo = cyl(0.182 * bulk, 0.195 * bulk, 0.06, 8, 1, Math.PI / 8);
     bandGeo.scale(1, 1, 0.8);
     bandGeo.translate(0, 0.02, 0);
@@ -241,11 +251,16 @@ export class Boxer {
       const plateGeo = new THREE.BoxGeometry(0.16, 0.11, 0.03);
       plateGeo.translate(0, 0.02, 0.16 * bulk);
       this.#part(plateGeo, this.hips, 'gold');
+      if (!ghost) {
+        const inset = this.#detail(new THREE.BoxGeometry(0.12, 0.075, 0.008), this.hips, 'dark');
+        inset.position.set(0, 0.02, 0.16 * bulk + 0.018);
+        this.#emblem('bolt', this.hips, 0, 0.02, 0.16 * bulk + 0.024, 0.058, 'gold');
+      }
     }
 
     // arms
     this.arms = [1, -1].map((side) => {
-      const upperGeo = cyl(0.066 * bulk, 0.056 * bulk, D.upper, 6);
+      const upperGeo = cyl((ghost ? 0.066 : champ ? 0.086 : 0.071) * bulk, 0.056 * bulk, D.upper, 6);
       upperGeo.translate(0, D.upper / 2, 0);
       const foreGeo = cyl(0.056 * bulk, 0.046 * bulk, D.fore, 6);
       foreGeo.translate(0, D.fore / 2, 0);
@@ -261,6 +276,7 @@ export class Boxer {
       this.#part(foreGeo, fore, 'skin');
       this.#part(gloveGeo, glove, side > 0 ? 'glove0' : 'glove1');
       this.#part(cuffGeo, glove, ghost ? 'glove0' : 'band');
+      if (!ghost) this.#gloveKit(glove, side);
       return {
         side, upper, fore, glove,
         shoulder: new Vector3(side * D.shoulderX, D.shoulderY, 0),
@@ -283,6 +299,7 @@ export class Boxer {
       this.#part(thighGeo, thigh, 'skin');
       this.#part(shinGeo, shin, 'skin');
       this.#part(bootGeo, boot, 'boots');
+      if (!ghost) this.#bootKit(boot, side);
       return {
         side, thigh, shin, boot,
         hip: new Vector3(side * 0.095 * bulk, -0.06, 0),
@@ -335,22 +352,235 @@ export class Boxer {
     }
   }
 
+  // Small sewn-on / sculpted details share the palette but skip the ink hull:
+  // a one-pixel outline would swallow their color at the game's resolution.
+  #detail(geo, parent, kind) {
+    const mesh = new Mesh(this.#geo(geo), this.toon[kind] || this.toon.skin);
+    parent.add(mesh);
+    return mesh;
+  }
+
+  #physique(tall) {
+    const b = this.bulk;
+    const heavy = this.style === 'champ';
+    for (const s of [-1, 1]) {
+      const pec = this.#detail(new THREE.SphereGeometry(1, 10, 6), this.torso, 'skin');
+      pec.scale.set((heavy ? 0.126 : 0.103) * b, 0.072 * tall, 0.057 * b);
+      pec.position.set(s * 0.103 * b, 0.365 * tall, 0.125 * b);
+      const shoulder = new THREE.SphereGeometry(heavy ? 0.088 : 0.073, 10, 6);
+      shoulder.scale(b, 1.12, 1);
+      shoulder.translate(s * this.D.shoulderX, this.D.shoulderY - 0.012, 0);
+      this.#part(shoulder, this.torso, 'skin');
+      const collar = this.#detail(new THREE.BoxGeometry(0.1 * b, 0.012, 0.012), this.torso, 'skinShade');
+      collar.position.set(s * 0.079 * b, 0.488 * tall, 0.1 * b);
+      collar.rotation.z = s * 0.12;
+    }
+    const abdomen = this.#detail(new THREE.BoxGeometry(0.008, 0.105 * tall, 0.008), this.torso, 'skinShade');
+    abdomen.position.set(0, 0.22 * tall, 0.136 * b);
+    if (this.style === 'punk') {
+      // A chunky pixel tattoo, readable as a single mark in the fight camera.
+      this.#emblem('pixel', this.torso, -0.21 * b, 0.425 * tall, 0.066, 0.055, 'hair');
+    }
+  }
+
+  #kit() {
+    const b = this.bulk;
+    for (const s of [-1, 1]) {
+      const leg = new THREE.CylinderGeometry(0.111 * b, 0.123 * b, 0.19, 8);
+      leg.scale(1, 1, 0.88);
+      leg.translate(s * 0.099 * b, -0.151, 0.013);
+      this.#part(leg, this.hips, 'trunks');
+      const hem = this.#detail(new THREE.CylinderGeometry(0.124 * b, 0.124 * b, 0.025, 8), this.hips, this.style === 'champ' ? 'dark' : 'band');
+      hem.scale.z = 0.88;
+      hem.position.set(s * 0.099 * b, -0.235, 0.013);
+      const stripe = this.#detail(new THREE.BoxGeometry(0.027, 0.175, 0.17 * b), this.hips, this.style === 'champ' ? 'dark' : 'band');
+      stripe.position.set(s * 0.204 * b, -0.139, 0.012);
+    }
+    if (this.style === 'punk') {
+      for (let row = 0; row < 2; row++) {
+        for (let col = 0; col < 4; col++) {
+          const tile = this.#detail(new THREE.BoxGeometry(0.034, 0.034, 0.009), this.hips, (row + col) % 2 ? 'dark' : 'band');
+          tile.position.set((col - 1.5) * 0.035, -0.145 - row * 0.035, 0.126 * b);
+        }
+      }
+    } else {
+      this.#emblem(this.style === 'champ' ? 'bolt' : 'star', this.hips, 0.102 * b, -0.153, 0.132 * b, 0.09, this.style === 'champ' ? 'dark' : 'band');
+      if (this.style === 'speed') {
+        for (let i = 0; i < 2; i++) {
+          const slash = this.#detail(new THREE.BoxGeometry(0.027, 0.083, 0.008), this.hips, 'band');
+          slash.position.set(-0.075 - i * 0.044, -0.151, 0.133 * b);
+          slash.rotation.z = -0.28;
+        }
+      }
+    }
+    // Visible drawstring and knot beneath the waistband.
+    for (const s of [-1, 1]) {
+      const cord = this.#detail(new THREE.BoxGeometry(0.009, 0.047, 0.008), this.hips, 'band');
+      cord.position.set(s * 0.012, -0.052, 0.16 * b);
+      cord.rotation.z = s * 0.28;
+    }
+  }
+
+  #gloveKit(glove, side) {
+    const D = this.D;
+    const kind = side > 0 ? 'glove0' : 'glove1';
+    const thumb = new THREE.SphereGeometry(D.gloveR * 0.46, 8, 6);
+    thumb.scale(0.8, 1.2, 0.9);
+    thumb.translate(-side * D.gloveR * 0.78, D.gloveOffset * 0.52, 0.015);
+    this.#part(thumb, glove, kind);
+    const strap = this.#detail(new THREE.BoxGeometry(0.102, 0.029, 0.018), glove, this.style === 'champ' ? 'gold' : 'accent');
+    strap.position.set(0, 0.002, 0.062);
+    const shine = this.#detail(new THREE.BoxGeometry(D.gloveR * 0.8, 0.021, 0.013), glove, 'band');
+    shine.position.set(-side * 0.017, D.gloveOffset + 0.051, D.gloveR * 0.94);
+    shine.rotation.z = side * 0.12;
+    this.#emblem(this.style === 'champ' ? 'bolt' : this.style === 'punk' ? 'pixel' : 'star', glove, 0, D.gloveOffset - 0.005, D.gloveR * 1.055, 0.045, this.style === 'champ' ? 'gold' : 'band');
+  }
+
+  #bootKit(boot, side) {
+    const shaft = new THREE.CylinderGeometry(0.059, 0.057, 0.2, 8);
+    shaft.translate(0, 0.061, -0.009);
+    this.#part(shaft, boot, 'boots');
+    const cuff = this.#detail(new THREE.CylinderGeometry(0.061, 0.061, 0.036, 8), boot, 'accent');
+    cuff.position.set(0, 0.153, -0.009);
+    const sole = this.#detail(new THREE.BoxGeometry(0.108, 0.027, 0.231), boot, 'dark');
+    sole.position.set(0, -0.065, 0.047);
+    const toe = this.#detail(new THREE.BoxGeometry(0.103, 0.037, 0.055), boot, 'accent');
+    toe.position.set(0, -0.005, 0.13);
+    const tongue = this.#detail(new THREE.BoxGeometry(0.03, 0.143, 0.01), boot, 'dark');
+    tongue.position.set(0, 0.067, 0.053);
+    for (let i = 0; i < 4; i++) {
+      const lace = this.#detail(new THREE.BoxGeometry(0.041, 0.009, 0.012), boot, 'band');
+      lace.position.set(0, 0.015 + i * 0.032, 0.06);
+      lace.rotation.z = side * (i % 2 ? 0.1 : -0.1);
+    }
+  }
+
+  /** Flat, native geometry badges; no textures or extra asset requests. */
+  #emblem(kind, parent, x, y, z, size, material) {
+    let points;
+    if (kind === 'bolt') {
+      points = [[0.13, 0.5], [-0.42, -0.06], [-0.04, -0.06], [-0.2, -0.5], [0.43, 0.13], [0.05, 0.13]];
+    } else if (kind === 'pixel') {
+      const mark = this.#detail(new THREE.BoxGeometry(size * 0.64, size * 0.64, 0.008), parent, material);
+      mark.position.set(x, y, z);
+      mark.rotation.z = Math.PI / 4;
+      return;
+    } else {
+      points = Array.from({ length: 10 }, (_, i) => {
+        const a = Math.PI / 2 + i * Math.PI / 5;
+        const r = i % 2 ? 0.22 : 0.5;
+        return [Math.cos(a) * r, Math.sin(a) * r];
+      });
+    }
+    // These concave badges are triangulated as a fan around an interior point.
+    const vertices = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      vertices.push(0, 0, 0, a[0] * size, a[1] * size, 0, b[0] * size, b[1] * size, 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+    geo.computeVertexNormals();
+    const badge = this.#detail(geo, parent, material);
+    badge.position.set(x, y, z);
+  }
+
   #face() {
-    const add = (geo, mat, x, y, z, rz = 0) => {
+    const add = (geo, mat, x, y, z, rz = 0, parent = this.head) => {
       const m = new Mesh(this.#geo(geo), mat);
       m.position.set(x, y, z);
       m.rotation.z = rz;
-      this.head.add(m);
+      parent.add(m);
+      return m;
     };
+    this.faceEyes = [];
+    this.faceBrows = [];
+    const champ = this.style === 'champ';
     for (const s of [-1, 1]) {
-      add(new THREE.BoxGeometry(0.036, 0.024, 0.012), this.eyeMat, s * 0.04, 0.02, 0.1);
-      add(new THREE.BoxGeometry(0.014, 0.02, 0.012), this.inkMat, s * 0.036, 0.018, 0.106);
-      add(new THREE.BoxGeometry(0.05, 0.014, 0.014), this.inkMat, s * 0.042, 0.048, 0.1, s * 0.3); // scowl
+      const ear = new THREE.SphereGeometry(0.024, 8, 6);
+      ear.scale(0.65, 1.15, 0.7);
+      ear.translate(s * 0.105, -0.004, 0);
+      this.#part(ear, this.head, 'skin');
+      const cheek = this.#detail(new THREE.SphereGeometry(0.03, 8, 4), this.head, 'skinShade');
+      cheek.scale.set(1.15, 0.42, 0.23);
+      cheek.position.set(s * 0.062, -0.035, 0.086);
+      const eye = new Group();
+      eye.position.set(s * 0.042, 0.021, 0.102);
+      this.head.add(eye);
+      add(new THREE.BoxGeometry(0.041, champ ? 0.022 : 0.028, 0.012), this.eyeMat, 0, 0, 0, 0, eye);
+      add(new THREE.BoxGeometry(0.016, 0.022, 0.009), this.inkMat, -s * 0.004, -0.002, 0.009, 0, eye);
+      this.faceEyes.push(eye);
+      const brow = add(new THREE.BoxGeometry(champ ? 0.058 : 0.05, champ ? 0.018 : 0.014, 0.015), this.style === 'coach' ? this.toon.hair : this.inkMat, s * 0.043, 0.049, 0.105, s * (champ ? 0.34 : this.style === 'punk' ? 0.17 : 0.25));
+      brow.userData.restAngle = brow.rotation.z;
+      this.faceBrows.push(brow);
     }
-    add(new THREE.BoxGeometry(0.05, 0.01, 0.012), this.inkMat, 0, -0.06, 0.09);
+    const nose = new THREE.BoxGeometry(champ ? 0.038 : 0.027, 0.04, 0.04);
+    nose.rotateX(-0.17);
+    nose.translate(0, -0.012, 0.107);
+    this.#part(nose, this.head, 'skin');
+    const mouth = add(new THREE.BoxGeometry(champ ? 0.077 : 0.062, this.style === 'punk' ? 0.024 : 0.019, 0.016), this.inkMat, this.style === 'punk' ? 0.009 : 0, -0.062, 0.09, this.style === 'punk' ? 0.1 : 0);
+    add(new THREE.BoxGeometry(champ ? 0.059 : 0.045, 0.009, 0.009), this.eyeMat, mouth.position.x, -0.057, 0.102, mouth.rotation.z);
+    if (this.style === 'punk') {
+      // Tape over one brow and an off-center grin give the rookie personality.
+      add(new THREE.BoxGeometry(0.041, 0.015, 0.008), this.toon.band, -0.063, 0.056, 0.108, -0.17);
+    } else if (this.style === 'champ') {
+      add(new THREE.BoxGeometry(0.01, 0.059, 0.006), this.toon.skinShade, 0.073, -0.005, 0.091, -0.32);
+      add(new THREE.BoxGeometry(0.06, 0.023, 0.014), this.toon.hair, 0, -0.09, 0.086);
+    } else if (this.style === 'coach') {
+      for (const s of [-1, 1]) {
+        add(new THREE.BoxGeometry(0.042, 0.017, 0.015), this.toon.hair, s * 0.018, -0.049, 0.108, s * 0.2);
+      }
+    }
   }
 
   #hair(kind) {
+    if (!this.isPlayer) {
+      if (kind === 'mohawk') {
+        const cap = new THREE.SphereGeometry(0.116, 10, 5, 0, Math.PI * 2, 0, 1.12);
+        cap.translate(0, 0.008, -0.008);
+        this.#part(cap, this.head, 'hair');
+        // A stepped row of chunky spikes reads as a punk crest in silhouette.
+        for (let i = 0; i < 5; i++) {
+          const height = [0.105, 0.16, 0.185, 0.155, 0.105][i];
+          const crest = new THREE.ConeGeometry(0.046, height, 4);
+          crest.scale(0.65, 1, 1.04);
+          crest.rotateZ(-0.1);
+          crest.translate(0, 0.1 + height / 2, 0.085 - i * 0.043);
+          this.#part(crest, this.head, 'hair');
+        }
+      } else if (kind === 'flattop') {
+        const fade = new THREE.BoxGeometry(0.207, 0.056, 0.191);
+        fade.translate(0, 0.088, -0.014);
+        this.#part(fade, this.head, 'hair');
+        const top = new THREE.BoxGeometry(0.184, this.style === 'coach' ? 0.052 : 0.09, 0.18);
+        top.translate(-0.006, this.style === 'coach' ? 0.138 : 0.156, -0.017);
+        this.#part(top, this.head, 'hair');
+        if (this.style === 'speed') {
+          const band = new THREE.CylinderGeometry(0.112, 0.112, 0.028, 12);
+          band.scale(0.98, 1, 1);
+          band.translate(0, 0.075, -0.006);
+          this.#part(band, this.head, 'accent');
+          for (const s of [-1, 1]) {
+            const tail = this.#detail(new THREE.BoxGeometry(0.029, 0.11, 0.016), this.head, 'accent');
+            tail.position.set(0.094 + s * 0.018, 0.028, -0.074);
+            tail.rotation.z = s * 0.28 - 0.25;
+          }
+        }
+      } else if (kind === 'spikes') {
+        const cap = new THREE.SphereGeometry(0.119, 10, 6, 0, Math.PI * 2, 0, 1.27);
+        cap.translate(0, 0.015, -0.012);
+        this.#part(cap, this.head, 'hair');
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * Math.PI * 2;
+          const spike = new THREE.ConeGeometry(0.052, i % 2 ? 0.145 : 0.19, 4);
+          spike.rotateX(0.48);
+          spike.rotateY(a);
+          spike.translate(Math.sin(a) * 0.075, 0.14, Math.cos(a) * 0.071 - 0.008);
+          this.#part(spike, this.head, 'hair');
+        }
+      }
+      return;
+    }
     if (kind === 'mohawk') {
       const g = new THREE.BoxGeometry(0.04, 0.09, 0.24, 1, 1, 4);
       g.translate(0, 0.13, -0.01);
@@ -769,6 +999,29 @@ export class Boxer {
     });
   }
 
+  /** Get back to the feet after a count; starts where knockout() settles. */
+  recover() {
+    this.clear();
+    return this.play({
+      dur: 0.85,
+      body: (p, t) => {
+        const u = clamp01(t / 0.85);
+        const down = 1 - easeInOut(u);
+        p.fall = -1.5 * down;
+        p.z -= 0.55 * down;
+        p.hp -= 0.6 * down;
+        p.hy += 0.5 * down;
+        p.lean -= 0.3 * down;
+        p.crouch += 0.05 * down + 0.16 * Math.sin(u * Math.PI);
+      },
+      hands: (p, t) => {
+        const down = 1 - easeInOut(clamp01(t / 0.85));
+        p.gL.lerp(_a.set(0.42, 1.6, -0.1), down);
+        p.gR.lerp(_a.set(-0.45, 1.6, 0.05), down);
+      },
+    });
+  }
+
   victory() {
     this.clear();
     return this.play({
@@ -849,6 +1102,13 @@ export class Boxer {
     this.hips.position.set(0, D.hipY - p.crouch, 0);
     this.torso.rotation.set(p.lean, p.twist, p.roll);
     this.head.rotation.set(p.hp - p.lean * 0.6, p.hy - p.twist * 0.5, p.hr);
+    if (this.faceEyes) {
+      // A short blink and a dazed squint keep portraits and in-ring faces alive.
+      const blink = (tt % 4.1 + 4.1) % 4.1 < 0.09;
+      const dazed = this.stance === 'open' || Math.abs(p.fall) > 0.5;
+      for (const eye of this.faceEyes) eye.scale.y = blink ? 0.12 : dazed ? 0.48 : this.flash > 0.4 ? 1.2 : 1;
+      for (const brow of this.faceBrows) brow.rotation.z = dazed ? brow.userData.restAngle * 0.35 : brow.userData.restAngle;
+    }
 
     this.hips.updateMatrix();
     this.torso.updateMatrix();

@@ -75,6 +75,12 @@ export function readAttack(key, action) {
 export const MATCH_SECONDS = 120;
 export const PLAYER_HP = 100;
 export const KO_HEAL = 30;
+export const KNOCKDOWNS_TO_KO = 3;
+export const REFEREE_COUNT = 10;
+// The first two falls get a standing count; the third goes the full ten.
+export const countLimit = (downs) => downs >= KNOCKDOWNS_TO_KO ? REFEREE_COUNT : downs === 1 ? 6 : 8;
+// Shorter health bars on recovery keep three-knockdown bouts within the clock.
+export const recoveryHp = (maxHp, downs) => downs >= KNOCKDOWNS_TO_KO ? 0 : Math.ceil(maxHp * (downs === 1 ? 0.6 : 0.4));
 export const MAX_STARS = 3;
 export const MAX_CHAIN = 4;
 export const PUNCH_DMG = 7;

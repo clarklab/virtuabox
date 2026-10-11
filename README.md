@@ -32,7 +32,17 @@ Every exchange is two turns, each a single decision with instant payoff.
    lifts them off the canvas. Saving up pays: 1 star does 20 damage, 2 do 44,
    all 3 do 76.
 
-KO all three fighters before the **2:00** clock runs out.
+KO all three fighters before the **2:00** clock runs out. Every bout uses a
+**three-knockdown rule for both fighters**: empty a health bar to score a
+knockdown, and the third knockdown is the KO. The referee steps in with a
+one-second count and an animated count signal. Fighters rise at **six** after
+their first fall (60% health) and **eight** after their second (40% health).
+On the third fall the referee counts all the way to **ten** and waves it off.
+Three markers under each health bar track falls in the current bout.
+
+The match clock stops for counts, recoveries, KO celebrations and introductions;
+pause also freezes the referee. Knockdown markers reset for each new opponent,
+and KO bonuses and circuit progress are awarded only after the third fall.
 
 New to it? Pick **TRAINING GYM** from the main menu. Coach Pops walks you
 through the instruction booklet one move per page: slip, duck, block, read it,
@@ -71,6 +81,10 @@ share sheet, or to save/copy on desktop.
 - Opponents are cel-shaded (3-step toon ramp) with constant-width ink outlines.
   You are a see-through green wireframe with a bold outline, like the Super
   Punch-Out!! reference.
+- Each opponent has a distinct face, build and kit: Pete's purple mohawk and
+  checker shorts, Nova's headband and star motif, and Megavolt's gold crest,
+  broad shoulders and lightning trunks. Gloves have thumbs and cuffs, boots
+  have laces, and fighters animate back to their feet after a knockdown.
 - The UI uses Press Start 2P, SNES menu windows, and Super Famicom colored face
   buttons for the punch pad.
 
@@ -79,7 +93,8 @@ share sheet, or to save/copy on desktop.
 It's laid out like a dual-screen handheld. The top screen is always the 3D
 ring, and the bottom screen swaps between the controller and menu windows:
 
-- **Title**: the logo letters drop in over an attract-mode demo, then PRESS
+- **Title**: an original vector arcade crest with a raised glove, dimensional
+  gold/cyan lettering and a stepped entrance sits over an attract-mode demo. PRESS
   START (with tonight's card) opens the main menu: FIGHT!, TRAINING GYM, SOUND.
 - **Tale of the tape**: before each bout, VS plates slide in over the ring.
   The bottom screen shows the opponent's portrait, hometown, record,
@@ -128,6 +143,17 @@ audio/                  generated SFX, announcer lines and soundtrack (mp3)
 icons/, og.jpg          pixel-art favicon + PWA icons, social preview (generated)
 manifest.webmanifest    installable PWA manifest
 tools/                  asset/bundle generators
+```
+
+## Fight regression checks
+
+The browser checks exercise real keyboard controls and the fight loop, including
+both fighters' three knockdowns, counts, health recovery, pause/restart, lethal
+super and chip damage, and KO scoring. They require Playwright and Chromium:
+
+```sh
+npm i --no-save playwright-core
+CHROMIUM=/path/to/chrome node tools/test-fights.mjs
 ```
 
 ## Regenerating assets

@@ -366,6 +366,40 @@ b.yl { color: var(--yellow); }
 .p2 .bar .fill { background: repeating-linear-gradient(90deg, var(--red) 0 4px, #901008 4px 6px); }
 .bar.low .fill { animation: blink 0.3s steps(1) infinite; }
 
+.knockdowns { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 6px; color: var(--grey); }
+.p2 .knockdowns { justify-content: flex-end; }
+.knockdowns i { width: 8px; height: 7px; border: 1px solid #686878; background: #181828; }
+.knockdowns i.down { background: var(--yellow); border-color: #fff0a0; box-shadow: 0 1px 0 #805000; }
+.knockdowns i.down:last-child { background: var(--red); border-color: #f89878; }
+
+/* The referee steps into the foreground while the fighters are separated. */
+#referee {
+  position: absolute; z-index: 9; right: 4%; bottom: 8%;
+  width: clamp(155px, 43%, 235px); padding: 10px 12px 9px;
+  border: 3px solid var(--white); box-shadow: 5px 5px 0 #000, inset 0 0 0 2px #000;
+  background: #101038; color: var(--white); pointer-events: none;
+  visibility: hidden; transform: translateY(16px); opacity: 0;
+}
+#referee.show { visibility: visible; transform: none; opacity: 1; transition: transform 0.2s steps(4), opacity 0.15s; }
+.ref-heading { display: grid; gap: 4px; padding-bottom: 6px; border-bottom: 2px solid #383868; }
+.ref-heading span { font-size: 6px; color: var(--cyan); }
+.ref-heading b { font-size: 7px; }
+.ref-count-row { display: flex; justify-content: center; align-items: center; gap: 6px; }
+.ref-sprite { width: 54%; height: auto; max-height: 110px; overflow: visible; }
+.ref-arm { transform-origin: 45px 33px; transform: rotate(28deg); }
+.raised .ref-arm { transform: rotate(-18deg); }
+.out .ref-arm { transform: rotate(70deg); }
+.ref-digits { display: grid; justify-items: center; gap: 4px; }
+#ref-count { font-size: clamp(29px, 7cqi, 48px); line-height: 1.2; color: var(--yellow); text-shadow: 3px 3px 0 #a83018; font-variant-numeric: tabular-nums; }
+.ref-digits small { font-size: 6px; color: var(--grey); }
+#ref-progress { height: 5px; background: #303050; }
+#ref-progress i { display: block; width: calc(var(--count, 0) * 100%); height: 100%; background: var(--yellow); }
+#ref-message { margin: 7px 0 0; text-align: center; font-size: 6px; line-height: 1.8; }
+#referee.last-count { border-color: var(--yellow); }
+#referee.out { border-color: var(--red); }
+#referee.out #ref-count { color: var(--red); }
+#referee.recovered #ref-message { color: var(--green); }
+
 .mid { text-align: center; }
 #clock svg { height: 26px; width: auto; display: block; margin: 0 auto; overflow: visible; }
 #clock .seg { fill: #282000; }
@@ -556,6 +590,44 @@ b.yl { color: var(--yellow); }
 
 /* title logo */
 .logo { text-align: center; padding: calc(22px + var(--sat)) 12px 0; }
+#title .logo {
+  position: relative;
+  width: min(100%, 600px);
+  margin-inline: auto;
+  padding: calc(12px + var(--sat)) 8px 0;
+}
+.logo-kicker {
+  margin: 0 0 1px;
+  color: #c5e3e8;
+  font-size: clamp(5px, 1.35cqi, 8px);
+  line-height: 1.6;
+  letter-spacing: 0.1em;
+  text-shadow: 1px 2px 0 #000;
+}
+.logo-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  filter: drop-shadow(0 5px 0 rgba(0, 0, 0, 0.45));
+}
+/* Keep the semantic heading and the existing letter-animation hooks. */
+#title .logo h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+#title.show .logo-art { animation: logoSlam 0.54s steps(7) both; }
+@keyframes logoSlam {
+  0% { opacity: 0; transform: translateY(-24px) scale(1.12); }
+  45% { opacity: 1; transform: translateY(3px) scale(0.98); }
+  70% { transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
 .logo h1 {
   margin: 0;
   font-weight: normal;
@@ -588,6 +660,25 @@ b.yl { color: var(--yellow); }
   box-shadow: 0 0 0 2px #000;
 }
 #title.show .tag { animation: slideU 0.24s steps(4) 0.6s both; }
+#title .tag {
+  margin: 5px 0 0;
+  padding: 7px 10px 6px;
+  color: #fff6cb;
+  font-size: clamp(6px, 1.8cqi, 9px);
+  background: #a91c36;
+  box-shadow: 0 0 0 2px #070918, 0 3px 0 #070918;
+}
+@media (min-aspect-ratio: 5/4) {
+  #title .logo { max-width: min(590px, 86%); }
+}
+@media (max-height: 640px) and (max-aspect-ratio: 5/4) {
+  #title .logo { width: min(100%, 370px); padding-top: calc(6px + var(--sat)); }
+  #title .logo-kicker { display: none; }
+  #title .tag { margin-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #title.show .logo-art, #title.show .tag { animation: none; }
+}
 .glint {
   position: absolute;
   width: 14px;

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="256" viewBox="0 0 640 256" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">VIRTUABOX</title>
+  <desc id="logo-desc">An arcade boxing emblem with angular gold and ice-blue lettering, red dimensional shadows, and a raised boxing glove.</desc>
+  <defs>
+    <linearGradient id="gold" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffbd7"/>
+      <stop offset=".43" stop-color="#fff6bc"/>
+      <stop offset=".44" stop-color="#ffd949"/>
+      <stop offset="1" stop-color="#f6a624"/>
+    </linearGradient>
+    <linearGradient id="ice" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".45" stop-color="#dcffff"/>
+      <stop offset=".46" stop-color="#6ae8f3"/>
+      <stop offset="1" stop-color="#269cca"/>
+    </linearGradient>
+    <!-- Hand-drawn letter silhouettes keep the mark independent of web fonts. -->
+    <g id="virtua" fill-rule="evenodd">
+      <path d="M0 0H17L29 46 41 0H59L39 66H19Z"/>
+      <path d="M70 0H108V14H98V52H108V66H70V52H80V14H70Z"/>
+      <path d="M119 0H160L173 13V28L163 39 178 66H157L143 42H137V66H119ZM137 14V28H153L157 24V18L153 14Z"/>
+      <path d="M183 0H240V16H221V66H203V16H183Z"/>
+      <path d="M249 0H267V46L272 51H282L287 46V0H305V52L291 66H263L249 52Z"/>
+      <path d="M333 0H355L375 66H356L352 50H335L331 66H312ZM342 16 338 36H349L345 16Z"/>
+    </g>
+    <g id="box" fill-rule="evenodd">
+      <path d="M0 0H41L54 12V26L46 33 56 42V54L43 66H0ZM18 14V26H33L37 22V18L33 14ZM18 40V52H34L38 48V44L34 40Z"/>
+      <path d="M79 0H110L125 15V51L110 66H79L64 51V15ZM86 16 82 20V46L86 50H103L107 46V20L103 16Z"/>
+      <path d="M132 0H154L167 21 179 0H201L177 32 202 66H180L166 43 153 66H131L156 32Z"/>
+    </g>
+  </defs>
+
+  <!-- Cut-paper speed lines and a championship crest. -->
+  <path d="m34 80 190 15 89-67 83 59 207-27-42 52 48 28-133 34-56 62-101-18-99 16-50-57L22 145l44-30Z" fill="#06091d" stroke="#06091d" stroke-width="12" stroke-linejoin="round"/>
+  <path d="m43 82 181 19 88-66 82 60 198-28-38 43 43 27-126 29-55 63-97-19-96 17-49-59L34 143l45-29Z" fill="#143a62" stroke="#64e1e6" stroke-width="3"/>
+  <path d="m62 90 157 26L117 122Zm390 26 112-37-39 33ZM43 148l130 9 31 40-70-34Zm412 22 134-30-63 37-101 34Z" fill="#2d7397"/>
+  <path d="m57 182 117-17-13 17-104 16Zm17 25 96-16 7 8-79 20Zm401-32 98-25-12 18-99 25Zm-10 23 80-18-22 18-68 11Z" fill="#ff5146" stroke="#070b1c" stroke-width="4"/>
+
+  <!-- Raised glove: a tiny pixel-era champion's salute. -->
+  <g transform="translate(288 4) rotate(-9 30 35)" stroke="#080b1b" stroke-width="5" stroke-linejoin="miter">
+    <path d="M9 47 3 33V17L14 6H39L51 15V38L42 49V66H13Z" fill="#fa5147"/>
+    <path d="M13 40 5 37 0 28 3 21 10 22 18 31" fill="#e32a3a"/>
+    <path d="M15 10H37L43 16V24H16Z" fill="#ff9a79" stroke="none"/>
+    <path d="M42 26V40L33 49H15L10 40H29L34 34V24Z" fill="#b41d35" stroke="none"/>
+    <path d="M13 49H42V66H13Z" fill="#fff3c0"/>
+    <path d="M20 55H35" fill="none" stroke="#2a7794" stroke-width="4"/>
+  </g>
+  <path d="m276 18-9-9m72 5 9-10m-82 33-16-2m100-4 16-5" fill="none" stroke="#ffdf67" stroke-width="5"/>
+
+  <!-- Layered outlines form the hard-edged extrusion, without raster filters. -->
+  <g transform="translate(105 75) skewX(-10) scale(1.18 1)">
+    <use href="#virtua" transform="translate(4 12)" fill="#8b1937" stroke="#06091d" stroke-width="13" stroke-linejoin="round"/>
+    <use href="#virtua" transform="translate(3 8)" fill="#ed3944" stroke="#ed3944" stroke-width="7" stroke-linejoin="round"/>
+    <use href="#virtua" fill="url(#gold)" stroke="#080b1f" stroke-width="8" stroke-linejoin="round" paint-order="stroke fill"/>
+    <use href="#virtua" fill="none" stroke="#fff7c8" stroke-width="1.3"/>
+  </g>
+  <g transform="translate(164 141) skewX(-10) scale(1.65 1.2)">
+    <use href="#box" transform="translate(4 10)" fill="#831d3d" stroke="#06091d" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#box" transform="translate(3 7)" fill="#ed3f51" stroke="#ed3f51" stroke-width="6" stroke-linejoin="round"/>
+    <use href="#box" fill="url(#ice)" stroke="#080b1f" stroke-width="8" stroke-linejoin="round" paint-order="stroke fill"/>
+    <use href="#box" fill="none" stroke="#e0ffff" stroke-width="1.2"/>
+  </g>
+
+  <!-- Bright, hard-edged glints recall the attract screen on an arcade cabinet. -->
+  <g fill="#fffbea" stroke="#080b1b" stroke-width="2" paint-order="stroke fill">
+    <path d="m103 69 3 11 11 3-11 3-3 11-3-11-11-3 11-3Z"/>
+    <path d="m476 141 3 13 13 3-13 3-3 13-3-13-13-3 13-3Z"/>
+    <path d="m546 185 2 8 8 2-8 2-2 8-2-8-8-2 8-2Z"/>
+  </g>
+</svg>

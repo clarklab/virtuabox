@@ -22,7 +22,7 @@ let opp;
 // game state
 const G = {
   scene: 'title', // title | fight | gym | results
-  mode: 'title', // title | intro | defend | attack | between | ko | over | gym | og
+  mode: 'title', // title | intro | defend | attack | between | count | ko | over | gym | og
   clock: R.MATCH_SECONDS,
   clockOn: false,
   paused: false,
@@ -39,6 +39,7 @@ function resetMatch() {
   Object.assign(G, {
     clock: R.MATCH_SECONDS, clockOn: false, timeScale: 1, hitstop: 0,
     score: 0, hp: R.PLAYER_HP, oppHp: 0, oppMax: 1, fight: 0, stars: 0,
+    playerDowns: 0, oppDowns: 0, count: 0,
     combo: 0, bestCombo: 0, kos: 0, landed: 0, reads: 0, perfects: 0, early: 0, supers: 0,
     recent: [], rounds: [], reason: null, highlight: 0, tutor: 0, tutorAttack: 0,
     def: null, punchWait: null, guard: 'base', lastRead: null,
@@ -72,6 +73,7 @@ function setScene(s) {
   G.scene = s;
   app.dataset.scene = s;
   if (s !== 'fight') app.classList.remove('danger');
+  if (s !== 'fight') hideReferee();
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +118,11 @@ let shownScore = 0;
 function updateHud() {
   setBar('p1', G.hp / R.PLAYER_HP);
   setBar('p2', G.oppHp / G.oppMax);
+  for (const [side, downs] of [['p1', G.playerDowns], ['p2', G.oppDowns]]) {
+    const el = $(`.${side} .knockdowns`);
+    el.setAttribute('aria-label', `${downs} of ${R.KNOCKDOWNS_TO_KO} knockdowns`);
+    el.querySelectorAll('i').forEach((pip, i) => pip.classList.toggle('down', i < downs));
+  }
   app.classList.toggle('danger', G.scene === 'fight' && G.hp > 0 && G.hp / R.PLAYER_HP <= 0.3);
 }
 
@@ -839,7 +846,13 @@ async function fightLoop(ctx) {
     if (G.clock <= 0) return 'time';
     const d = await defendTurn(ctx);
     if (gone(ctx) || d === null) return 'abort';
-    if (G.hp <= 0) return 'playerKO';
+    if (G.hp <= 0) {
+      G.rounds.push([d]);
+      const result = await knockdown(player, ctx.my);
+      if (gone(ctx)) return 'abort';
+      if (result === 'ko') return 'playerKO';
+      continue;
+    }
     if (G.clock <= 0) {
       G.rounds.push([d]);
       return 'time';
@@ -850,37 +863,115 @@ async function fightLoop(ctx) {
     const log = await attackTurn(d, ctx);
     if (gone(ctx)) return 'abort';
     G.rounds.push([d, ...log]);
-    if (G.oppHp <= 0) return 'oppKO';
+    if (G.oppHp <= 0) {
+      const result = await knockdown(opp, ctx.my);
+      if (gone(ctx)) return 'abort';
+      if (result === 'ko') return 'oppKO';
+      continue;
+    }
     G.mode = 'between';
     setControls('wait');
     await wait(0.2);
   }
 }
 
-async function knockout(victim, my) {
-  G.mode = 'ko';
+function hideReferee() {
+  $('#referee').className = '';
+  $('#referee').setAttribute('aria-hidden', 'true');
+  G.count = 0;
+}
+
+/** One down: suspend the exchange, count, then either a recovery or the KO. */
+async function knockdown(victim, my) {
+  const isOpponent = victim === opp;
+  const downs = isOpponent ? ++G.oppDowns : ++G.playerDowns;
+  const finalDown = downs >= R.KNOCKDOWNS_TO_KO;
+  const name = isOpponent ? OPP().short : 'YOU';
+  G.mode = 'count';
+  G.clockOn = false;
+  G.def = null;
+  G.punchWait = null;
+  G.combo = 0;
+  setCombo(0);
   setControls('wait');
+  renderPad(null);
   hideTell();
   showTargets(null);
+  updateHud();
   app.classList.remove('danger');
-  G.timeScale = 0.28;
+  setTurn('idle', 'KNOCKDOWN!', `${name} · ${downs} OF ${R.KNOCKDOWNS_TO_KO}`);
+  setStatus('REFEREE COUNT');
+  G.timeScale = 0.55;
   sound.slowmo(true);
+  sound.setIntensity(1);
+  (isOpponent ? player : opp).clear();
   victim.knockout();
-  if (victim === opp) stage.confetti();
   const focus = new THREE.Vector3();
   victim.root.getWorldPosition(focus);
-  stage.shot('ko', { focus, rate: 5, yaw: victim === opp ? 1 : -1 });
-  popup('K.O.!!', 'xl gold', 1500);
-  sound.ko();
-  sound.voice('ko', 0.1);
+  stage.shot('ko', { focus, rate: 5, yaw: isOpponent ? 1 : -1 });
+  popup('DOWN!', 'xl gold', 800);
+  sound.voice('down');
   quake();
-  await waitReal(0.35);
-  stage.capture();
-  G.highlight = 99;
-  await waitReal(1.25);
+  await waitReal(0.7);
   if (my !== gen) return;
   G.timeScale = 1;
   sound.slowmo(false);
+  const ref = $('#referee');
+  const number = $('#ref-count');
+  const message = $('#ref-message');
+  ref.className = 'show';
+  ref.setAttribute('aria-hidden', 'false');
+  $('#ref-downs').textContent = `${name} DOWN · ${downs}/3`;
+  message.textContent = finalDown ? 'LAST KNOCKDOWN' : 'STAY WITH ME!';
+  for (let n = 1; n <= R.countLimit(downs); n++) {
+    G.count = n;
+    number.textContent = n;
+    ref.classList.toggle('raised', n % 2 === 1);
+    ref.classList.toggle('last-count', n >= 8);
+    $('#ref-progress').style.setProperty('--count', n / R.REFEREE_COUNT);
+    sound.tick(n >= 8);
+    haptic(n === R.REFEREE_COUNT ? [30, 30, 90] : 12);
+    // Pause-aware real seconds, independent of cinematic slow motion.
+    await waitReal(1);
+    if (my !== gen) return;
+  }
+  if (finalDown) {
+    G.mode = 'ko';
+    ref.classList.add('out');
+    message.textContent = 'YOU\'RE OUT!';
+    setTurn('idle', 'KNOCKOUT!', 'THREE KNOCKDOWNS · BOUT OVER');
+    setStatus('KNOCKOUT');
+    popup('K.O.!!', 'xl gold', 1500);
+    sound.ko();
+    sound.voice('ko', 0.1);
+    sound.bell(3);
+    if (isOpponent) stage.confetti();
+    stage.capture();
+    G.highlight = 99;
+    await waitReal(1.4);
+    if (my !== gen) return;
+    hideReferee();
+    return 'ko';
+  }
+  message.textContent = 'BACK ON YOUR FEET!';
+  ref.classList.add('recovered');
+  if (isOpponent) G.oppHp = R.recoveryHp(G.oppMax, downs);
+  else G.hp = R.recoveryHp(R.PLAYER_HP, downs);
+  victim.recover();
+  updateHud();
+  await waitReal(0.9);
+  if (my !== gen) return;
+  hideReferee();
+  stage.shot('fight', { rate: 4 });
+  setStatus(`BOUT ${G.fight + 1} · ${OPP().short}`);
+  setTurn('idle', 'BOX!', 'THIRD KNOCKDOWN IS THE K.O.');
+  sound.voice('fight');
+  popup('BOX!', 'good', 700);
+  await waitReal(0.6);
+  if (my !== gen) return;
+  G.clockOn = G.clock > 0;
+  sound.setIntensity(2);
+  return 'recovered';
 }
 
 // ---------------------------------------------------------------------------
@@ -908,6 +999,9 @@ function fillTape(i) {
 
 async function introFight(i, my) {
   G.mode = 'intro';
+  G.clockOn = false;
+  G.playerDowns = 0;
+  G.oppDowns = 0;
   setControls('wait');
   G.fight = i;
   const o = makeOpponent(i);
@@ -969,6 +1063,9 @@ async function startGame() {
     gameTimers.clear();
     realTimers.clear();
     resetMatch();
+    hideReferee();
+    sound.slowmo(false);
+    superFx.className = '';
     setStars(0);
     setCombo(0);
     setScene('fight');
@@ -996,8 +1093,6 @@ async function startGame() {
     const r = await fightLoop(ctx);
     if (my !== gen || r === 'abort') return;
     if (r === 'oppKO') {
-      await knockout(opp, my);
-      if (my !== gen) return;
       G.kos++;
       renderPips();
       const bonus = R.SCORE.ko * (f + 1) + G.hp * R.SCORE.hpBonus;
@@ -1017,7 +1112,6 @@ async function startGame() {
       continue;
     }
     if (r === 'playerKO') {
-      await knockout(player, my);
       opp.victory();
       return endGame('ko', my);
     }
@@ -1030,6 +1124,7 @@ async function endGame(reason, my) {
   if (my !== gen) return;
   G.mode = 'over';
   G.clockOn = false;
+  hideReferee();
   G.reason = reason;
   G.punchWait = null;
   G.def = null;
@@ -1243,6 +1338,8 @@ async function toTitle() {
     $('#paused').classList.remove('show');
     $('#sharebox').classList.remove('show');
     resetMatch();
+    sound.slowmo(false);
+    superFx.className = '';
     setStars(0);
     setCombo(0);
     hideTell();
@@ -1272,17 +1369,15 @@ function titleScreen(menu = false) {
   attract();
 }
 
-// sparkles on the logo letters
-const logoLetters = [];
+// Glints follow the illustrated logo rather than the hidden semantic heading.
 setInterval(() => {
-  if (!topEls.title.classList.contains('show') || !logoLetters.length) return;
-  const l = rand(logoLetters);
+  if (!topEls.title.classList.contains('show') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const box = topEls.title.getBoundingClientRect();
-  const r = l.getBoundingClientRect();
+  const r = $('#title .logo-art').getBoundingClientRect();
   const g = document.createElement('i');
   g.className = 'glint';
-  g.style.left = `${r.right - box.left - 3}px`;
-  g.style.top = `${r.top - box.top + 4}px`;
+  g.style.left = `${r.left - box.left + r.width * (0.2 + Math.random() * 0.6)}px`;
+  g.style.top = `${r.top - box.top + r.height * (0.25 + Math.random() * 0.5)}px`;
   topEls.title.appendChild(g);
   setTimeout(() => g.remove(), 500);
 }, 1300);
@@ -1361,7 +1456,7 @@ function resume() {
 
 $('#pause').addEventListener('click', () => pause());
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && ['intro', 'defend', 'attack', 'between', 'ko'].includes(G.mode)) pause();
+  if (document.hidden && ['intro', 'defend', 'attack', 'between', 'count', 'ko'].includes(G.mode)) pause();
 });
 
 // ---------------------------------------------------------------------------
@@ -1840,7 +1935,6 @@ async function ogPose() {
 }
 
 async function boot() {
-  logoLetters.push(...$$('#title h1 i'));
   setClock(G.clock);
   updateHud();
   setControls('wait');

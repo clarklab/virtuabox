@@ -53,6 +53,7 @@
         <div class="fighter p1">
           <div class="nm">YOU</div>
           <div class="bar"><i class="lag"></i><i class="fill"></i></div>
+          <div class="knockdowns" aria-label="0 of 3 knockdowns"><span>DOWN</span><i></i><i></i><i></i></div>
         </div>
         <div class="mid">
           <div id="clock" aria-label="Time left"></div>
@@ -61,6 +62,7 @@
         <div class="fighter p2">
           <div class="nm" id="opp-name">PIXEL PETE</div>
           <div class="bar"><i class="lag"></i><i class="fill"></i></div>
+          <div class="knockdowns" aria-label="0 of 3 knockdowns"><span>DOWN</span><i></i><i></i><i></i></div>
         </div>
       </div>
       <div id="superfx" aria-hidden="true"></div>
@@ -69,10 +71,38 @@
       <div id="combo" aria-live="polite"><b></b><small>HIT COMBO</small></div>
       <div id="fx" aria-live="polite"></div>
 
+      <div id="referee" aria-hidden="true">
+        <div class="ref-heading"><span>W.V.B.A. OFFICIAL</span><b id="ref-downs"></b></div>
+        <div class="ref-count-row">
+          <svg class="ref-sprite" viewBox="0 0 64 80" aria-hidden="true" shape-rendering="crispEdges">
+            <g stroke="#080818" stroke-width="2" stroke-linejoin="miter">
+              <path fill="#282840" d="M22 51h23l2 22h-10l-3-17-3 17H21z"/>
+              <path fill="#101020" d="M20 72h12v6H17v-4zm17 0h10l4 4v2H37z"/>
+              <path fill="#f8f8e8" d="M21 27h24l6 9-6 8v10H21V40l-7-4z"/>
+              <path fill="#f0b888" d="M25 9h17v17l-6 5h-6l-5-6z"/>
+              <path fill="#383848" d="M24 9V5h19v10h-4v-4h-9v4h-6z"/>
+              <path fill="#f0b888" d="M17 33l6 6-8 12-5-3 3-9z"/>
+              <g class="ref-arm">
+                <path fill="#f8f8e8" d="m44 29 9 4-3 9-9-6z"/>
+                <path fill="#f0b888" d="m51 34 4-12 6 2-3 15-7 3-3-6z"/>
+                <path fill="#f0b888" d="M54 25v-9h3v-6h3v10h3v6z"/>
+              </g>
+            </g>
+            <path fill="#080818" d="M28 18h3v3h-3zm9 0h3v3h-3zm-5 6h5v2h-5zM29 30l5 3 5-3v6l-5-2-5 2zM25 38h2v13h-2zm9 0h2v13h-2zm8 2h2v11h-2z"/>
+            <path fill="#e82818" d="M28 41h3v4h-3z"/>
+          </svg>
+          <div class="ref-digits"><b id="ref-count" role="status" aria-live="polite">1</b><small>OF 10</small></div>
+        </div>
+        <div id="ref-progress"><i></i></div>
+        <p id="ref-message">STAY WITH ME!</p>
+      </div>
+
       <!-- top-screen layers -->
       <div id="title" class="top-ov">
         <div class="logo">
+          <p class="logo-kicker">WORLD VIRTUAL BOXING ASSOCIATION</p>
           <h1 aria-label="VIRTUABOX"><span class="v">VIRTUA</span><span class="b">BOX</span></h1>
+          <img class="logo-art" src="icons/virtuabox-logo.svg" width="640" height="256" alt="" aria-hidden="true" fetchpriority="high">
           <p class="tag">READ · SLIP · PUNCH · 2 MINUTES</p>
         </div>
       </div>
@@ -157,7 +187,7 @@
         <div class="win">
           <h2 class="win-h">MAIN MENU</h2>
           <ul class="menu" id="main-menu">
-            <li data-mi="fight"><span class="cur"></span><b>FIGHT!</b><small>3 BOUTS · 2:00 ON THE CLOCK</small></li>
+            <li data-mi="fight"><span class="cur"></span><b>FIGHT!</b><small>3 BOUTS · 3 KNOCKDOWNS TO K.O.</small></li>
             <li data-mi="gym"><span class="cur"></span><b>TRAINING GYM</b><small>LEARN EVERY MOVE, ONE BY ONE</small><em class="badge" id="gym-badge">NEW!</em></li>
             <li data-mi="sound"><span class="cur"></span><b id="sound-label">SOUND: ON</b><small>MUSIC, SFX AND ANNOUNCER</small></li>
           </ul>

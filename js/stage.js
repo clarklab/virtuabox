@@ -330,9 +330,9 @@ export class Stage {
    * same palette/dither pass as the ring, so menu art matches the 3D models.
    * `facing` is +1 when the boxer faces +z (the opponent), -1 for the player.
    */
-  portrait(root, head, facing = 1, { size = 48, bg = 0x101058, dist = 0.86, fov = 30 } = {}) {
+  portrait(root, head, facing = 1, { size = 48, bg = 0x101058, dist = 1.15, fov = 36 } = {}) {
     const vis = this.scene.children.map((o) => o.visible);
-    this.scene.children.forEach((o) => { o.visible = o === root || o.isLight; });
+    this.scene.children.forEach((o) => { o.visible = o === root || !!o.isLight; });
     const clear = this.renderer.getClearColor(new Color());
     this.renderer.setClearColor(bg, 1);
     const cam = this.camera;
@@ -346,8 +346,8 @@ export class Stage {
     cam.aspect = 1;
     cam.fov = fov;
     cam.updateProjectionMatrix();
-    cam.position.set(head.x + 0.14 * facing, head.y + 0.02, head.z + dist * facing);
-    cam.lookAt(head.x, head.y - 0.05, head.z);
+    cam.position.set(head.x + 0.14 * facing, head.y + 0.05, head.z + dist * facing);
+    cam.lookAt(head.x, head.y + 0.01, head.z);
     this.composer.render();
     const [c, g] = pixelCanvas(size, size);
     g.drawImage(this.renderer.domElement, 0, 0);
